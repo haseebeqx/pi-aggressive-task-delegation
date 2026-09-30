@@ -34,7 +34,7 @@ test('tool output stays separate from assistant Markdown and resets on the next 
   assert.deepEqual(node.message.content, []);
 });
 
-test('widgets use native session components, clip rendered lines, and theme the bottom indicator orange', () => {
+test('widgets pin only compact routing and usage, and theme the bottom indicator orange', () => {
   const calls = [];
   class Text {
     constructor(text) { this.text = text; }
@@ -49,6 +49,7 @@ test('widgets use native session components, clip rendered lines, and theme the 
     constructor(...args) { super('tool output'); calls.push(args); }
     markExecutionStarted() {}
     setArgsComplete() {}
+    setExpanded(expanded) { calls.push({ expanded }); }
     updateResult(result, partial) { calls.push({ result, partial }); }
   }
   const node = { role: 'worker', task: 'Test', cwd: '/tmp', streaming: true,
@@ -58,13 +59,14 @@ test('widgets use native session components, clip rendered lines, and theme the 
   const widgets = createDelegationWidgets(node, { Text, AssistantMessageComponent, ToolExecutionComponent });
   const component = widgets.content({}, theme);
   const lines = component.render(40);
-  assert.equal(lines.length, 21);
-  assert.equal(lines[3], 'formatted 13');
-  assert.equal(lines.at(-1), 'tool output');
-  assert.ok(calls.some((call) => call.message === node.message && call.streaming));
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], 'worker');
+  assert.ok(!lines.join('\n').includes(node.task));
+  assert.ok(!lines.join('\n').includes('formatted'));
+  assert.ok(!lines.join('\n').includes('tool output'));
   assert.equal(widgets.indicator({}, theme).render(40)[0],
     'Delegated task · worker · Ctrl+Esc: cancel and return to parent');
   assert.ok(calls.some((call) => call.fg?.kind === 'rgb' && call.fg.r === 255 && call.fg.g === 149 && call.fg.b === 0));
   component.invalidate();
-  assert.equal(calls.filter((call) => call === 'invalidate').length, 5);
+  assert.equal(calls.filter((call) => call === 'invalidate').length, 3);
 });

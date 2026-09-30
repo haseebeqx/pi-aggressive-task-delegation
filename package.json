@@ -21,7 +21,7 @@
     "typebox": "*"
   },
   "scripts": {
-    "check": "node --check src/delegation-view.js && node --check src/delegation-renderer.js && node --check src/extension.js && node --check src/workflow.js && node --check src/log-storage.js",
+    "check": "node --check src/delegation-view.js && node --check src/delegation-renderer.js && node --check src/delegation-transcript.js && node --check src/extension.js && node --check src/workflow.js && node --check src/log-storage.js",
     "test": "node --test test/*.test.js",
     "test:smoke": "pi --offline --no-extensions -e ./test/smoke-extension.js --no-session --mode json -p /divider-smoke",
     "prepack": "npm run check && npm test"

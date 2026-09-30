@@ -14,6 +14,31 @@ export default function (pi) {
     handler: async (_args, ctx) => {
       initTheme('dark', false);
       const widgetFrames = [];
+      const entryRenderers = new Map();
+      const transcriptComponents = [];
+      const transcriptFrames = [];
+      let painting = false;
+      const paintTranscript = () => {
+        if (painting) return;
+        painting = true;
+        try {
+          for (const component of transcriptComponents) {
+            for (const width of [20, 80]) {
+              const lines = component.render(width);
+              assert.ok(lines.every((line) => visibleWidth(line) <= width), 'Transcript must fit terminal width');
+              transcriptFrames.push(lines);
+            }
+          }
+        } finally { painting = false; }
+      };
+      const transcriptAPI = {
+        registerEntryRenderer: (type, renderer) => { entryRenderers.set(type, renderer); },
+        appendEntry: (customType, data) => {
+          const renderer = entryRenderers.get(customType);
+          if (renderer) transcriptComponents.push(renderer({ customType, data }, {}, ctx.ui.theme));
+          paintTranscript();
+        },
+      };
       const ui = {
         ...ctx.ui,
         setWidget(key, factory, options) {
@@ -21,7 +46,7 @@ export default function (pi) {
             widgetFrames.push({ key, cleared: true });
             return;
           }
-          const component = factory({ requestRender() {} }, ctx.ui.theme);
+          const component = factory({ requestRender: paintTranscript }, ctx.ui.theme);
           for (const width of [20, 80]) {
             const lines = component.render(width);
             assert.ok(lines.every((line) => visibleWidth(line) <= width), 'Widget must fit terminal width');
@@ -32,6 +57,7 @@ export default function (pi) {
       };
       let tool;
       taskDivider({
+        ...transcriptAPI,
         registerTool: (definition) => { tool = definition; },
         registerCommand() {}, on() {},
       });
@@ -68,10 +94,8 @@ export default function (pi) {
       assert.equal(result.isError, false, result.content[0].text);
       assert.ok(widgetFrames.some((frame) => frame.key === 'delegation-indicator' &&
         frame.options?.placement === 'belowEditor' && frame.lines.some((line) => /Delegated task/.test(line))));
-      assert.ok(widgetFrames.some((frame) => frame.key === 'delegation' &&
-        frame.lines?.some((line) => /Leaf completed/.test(line))));
-      assert.ok(widgetFrames.some((frame) => frame.key === 'delegation' &&
-        frame.lines?.some((line) => /delegate_task/.test(line))));
+      assert.ok(transcriptFrames.some((lines) => lines.some((line) => /Leaf completed/.test(line))));
+      assert.ok(transcriptFrames.some((lines) => lines.some((line) => /delegate_task/.test(line))));
       assert.ok(widgetFrames.some((frame) => frame.key === 'delegation-indicator' && frame.cleared));
       assert.equal(result.isError, false, result.content[0].text);
       assert.equal(calls, 5);
@@ -105,6 +129,70 @@ export default function (pi) {
         assert.equal(transcripts[index].filter((m) => m.role === 'user').length, 1);
         assert.equal(transcripts[index].filter((m) => m.role === 'assistant').length, 0);
       }
+      // UI failures at a final message boundary must not strand SDK prompt().
+      for (const failure of ['widget', 'transcript']) {
+        let resilientTool;
+        let failed = false;
+        let warnings = 0;
+        let requests = 0;
+        taskDivider({
+          registerEntryRenderer() {},
+          appendEntry(_type, data) {
+            if (failure === 'transcript' && data.message?.stopReason === 'stop') {
+              failed = true;
+              throw new Error('Final transcript rendering failed');
+            }
+          },
+          registerTool: (definition) => { resilientTool = definition; },
+          registerCommand() {}, on() {},
+        });
+        const resilientUI = {
+          ...ui,
+          notify() { warnings++; },
+          setWidget(key, factory, options) {
+            if (failure === 'widget' && requests > 0 && factory && !failed) {
+              failed = true;
+              throw new Error('Final widget rendering failed');
+            }
+            return ui.setWidget(key, factory, options);
+          },
+        };
+        const resilientRegistry = {
+          streamSimple(model) {
+            const message = {
+              role: 'assistant', content: [{ type: 'text', text: requests++ === 0
+                ? 'Worker finished.' : 'PASS\nVerified.' }],
+              api: model.api, provider: model.provider, model: model.id,
+              usage: { ...emptyUsage(), input: 1 }, stopReason: 'stop', timestamp: Date.now(),
+            };
+            const stream = new AssistantMessageEventStream();
+            stream.push({ type: 'done', reason: 'stop', message });
+            stream.end(message);
+            return stream;
+          },
+        };
+        let deadline;
+        let resilientResult;
+        try {
+          resilientResult = await Promise.race([
+            resilientTool.execute('render-failure', { task: 'Finish despite UI failure' },
+              undefined, undefined, { ...ctx, mode: 'tui', hasUI: true,
+                ui: resilientUI, modelRegistry: resilientRegistry }),
+            new Promise((_, reject) => {
+              deadline = setTimeout(() => reject(new Error(`${failure} failure stranded delegation`)), 5000);
+            }),
+          ]);
+        } finally { clearTimeout(deadline); }
+        assert.equal(failed, true, `${failure} failure must be exercised`);
+        assert.equal(warnings, 1);
+        assert.equal(requests, 2, 'Worker must automatically advance to reviewer');
+        assert.equal(resilientResult.isError, false, resilientResult.content[0].text);
+        assert.equal(resilientResult.usage.input, 2);
+        for (const path of Object.values(resilientResult.details.logs)) {
+          assert.ok(readEntries(path).some((entry) => entry.message?.stopReason === 'stop'));
+          rmSync(dirname(path), { recursive: true });
+        }
+      }
       // Cancel a nested worker, then steer its immediate parent through the
       // actual extension input hook while its delegate_task call is blocked.
       const handlers = {};
@@ -112,6 +200,7 @@ export default function (pi) {
       const shortcuts = {};
       let cancelTool;
       taskDivider({
+        ...transcriptAPI,
         registerTool: (definition) => { cancelTool = definition; },
         registerCommand: (name, definition) => { commands[name] = definition; },
         registerShortcut: (key, definition) => { shortcuts[key] = definition; },
@@ -178,7 +267,7 @@ export default function (pi) {
         ...Object.values(cancelledResult.message.details.logs)]) {
         rmSync(dirname(path), { recursive: true });
       }
-      console.log('Task-divider SDK smoke test passed (recursion, logs, usage, nested cancellation and parent input).');
+      console.log('Task-divider SDK smoke test passed (recursion, logs, usage, UI failure recovery, nested cancellation and parent input).');
     },
   });
 }

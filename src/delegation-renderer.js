@@ -1,9 +1,8 @@
-// Render complete structured messages before clipping visual lines. Clipping the
-// source text would lose Markdown fences, list context, and syntax highlighting.
-export function createDelegationWidgets(node, { AssistantMessageComponent, ToolExecutionComponent, Text }) {
+// Only routing and usage stay pinned. Output lives in the normal transcript.
+export function createDelegationWidgets(node, { Text }) {
   const path = [];
   for (let current = node; current; current = current.parent) {
-    path.unshift(current.role === 'main' ? 'Main' : `${current.role}: ${current.task}`);
+    path.unshift(current.role === 'main' ? 'Main' : current.role);
   }
   return {
     content: (tui, theme) => {
@@ -11,27 +10,14 @@ export function createDelegationWidgets(node, { AssistantMessageComponent, ToolE
       const header = new Text(theme.fg('muted', path.join(' → ')), 0, 0);
       const activity = new Text(theme.fg('muted', node.waiting
         ? 'Cancelled child. What should this parent do instead? Type your instruction.'
-        : `${node.activity || 'Working'} · Input steers this session · Ctrl+Esc: return to parent`), 0, 0);
+        : `${node.activity || 'Working'} · Input steers this session · Ctrl+Esc: parent`), 0, 0);
       const stats = new Text(theme.fg('dim', `Tokens: ${usage?.input ?? 0} in / ${usage?.output ?? 0} out / ${usage?.cacheRead ?? 0} cache read / ${usage?.cacheWrite ?? 0} cache write · Cost: $${(usage?.cost.total ?? 0).toFixed(4)}`), 0, 0);
-      const assistant = new AssistantMessageComponent();
-      if (node.message) assistant.updateContent(node.message, node.streaming);
-      let tool;
-      if (node.tool) {
-        tool = new ToolExecutionComponent(node.tool.name, node.tool.id, node.tool.args,
-          { showImages: false }, undefined, tui, node.cwd);
-        tool.markExecutionStarted();
-        tool.setArgsComplete();
-        if (node.tool.result) tool.updateResult(node.tool.result, node.tool.partial);
-      }
       return {
         render(width) {
-          return [
-            ...header.render(width), ...activity.render(width), ...stats.render(width),
-            ...[...assistant.render(width), ...(tool?.render(width) ?? [])].slice(-18),
-          ];
+          return [...header.render(width), ...activity.render(width), ...stats.render(width)];
         },
         invalidate() {
-          for (const component of [header, activity, stats, assistant, tool]) component?.invalidate();
+          for (const component of [header, activity, stats]) component?.invalidate();
         },
       };
     },

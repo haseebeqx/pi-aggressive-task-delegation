@@ -6,6 +6,7 @@ import { Type } from 'typebox';
 import { Text } from '@earendil-works/pi-tui';
 import { createDelegationWidgets, updateDelegationMessage } from './delegation-renderer.js';
 import { DelegationView } from './delegation-view.js';
+import { DelegationTranscript, OUTPUT_ENTRY, createTranscriptComponent } from './delegation-transcript.js';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { allocateLogDirectory, seedPrivateSession } from './log-storage.js';
@@ -36,17 +37,49 @@ export default function taskDivider(pi) {
   const activeSessions = new Set();
   const ephemeralParent = randomUUID();
   let ui;
+  let terminalUI;
   let lastPaint = 0;
+  const components = { AssistantMessageComponent, ToolExecutionComponent, Text };
+  const transcript = new DelegationTranscript((type, data) => pi.appendEntry(type, data), randomUUID);
+  pi.registerEntryRenderer(OUTPUT_ENTRY, (entry, _options, theme) =>
+    createTranscriptComponent(() => transcript.records.get(entry.data.id) ?? entry.data,
+      components, { requestRender: () => terminalUI?.requestRender() }, theme));
+  pi.on('session_start', (_event, ctx) => {
+    transcript.restore(ctx.sessionManager.getBranch());
+    ui = ctx.hasUI && ctx.mode === 'tui' ? ctx.ui : undefined;
+  });
+  pi.on('session_tree', (_event, ctx) => {
+    transcript.restore(ctx.sessionManager.getBranch());
+  });
+  const disableUI = (error) => {
+    const failedUI = ui;
+    ui = undefined;
+    terminalUI = undefined;
+    // Rendering must never throw back into the SDK's event dispatch: that can
+    // interrupt persistence/settlement and leave prompt() waiting indefinitely.
+    try {
+      failedUI?.setWidget('delegation', undefined);
+      failedUI?.setWidget('delegation-indicator', undefined);
+      failedUI?.notify(`Delegation display disabled: ${error.message}`, 'warning');
+    } catch { /* The UI itself may be broken; model execution must continue. */ }
+  };
   const view = new DelegationView((node) => {
     if (!ui) return;
-    if (!node) {
-      ui.setWidget('delegation', undefined);
-      ui.setWidget('delegation-indicator', undefined);
-      return;
+    try {
+      if (!node) {
+        ui.setWidget('delegation', undefined);
+        ui.setWidget('delegation-indicator', undefined);
+        return;
+      }
+      const widgets = createDelegationWidgets(node, components);
+      ui.setWidget('delegation', (tui, theme) => {
+        terminalUI = tui;
+        return widgets.content(tui, theme);
+      });
+      ui.setWidget('delegation-indicator', widgets.indicator, { placement: 'belowEditor' });
+    } catch (error) {
+      disableUI(error);
     }
-    const widgets = createDelegationWidgets(node, { AssistantMessageComponent, ToolExecutionComponent, Text });
-    ui.setWidget('delegation', widgets.content);
-    ui.setWidget('delegation-indicator', widgets.indicator, { placement: 'belowEditor' });
   });
 
   // A child receives a new conversation, never a copy of its parent's messages.
@@ -99,11 +132,16 @@ export default function taskDivider(pi) {
     activeSessions.add(session);
     node = view.enter(scope, session, role, task);
     node.cwd = parentCtx.cwd;
-    const abort = () => session.agent.abort();
+    const abort = () => {
+      // Agent-only abort leaves session-level retry/compaction work alive.
+      void session.abort().catch(() => {});
+    };
     signal?.addEventListener('abort', abort, { once: true });
     const usage = emptyUsage();
     node.usage = usage;
     // Accumulate usage as events arrive, including nested delegation results.
+    let assistantRecord;
+    let toolRecord;
     const unsubscribe = session.subscribe((event) => {
       if (event.type === 'message_end' &&
           (event.message.role === 'assistant' || event.message.role === 'toolResult')) {
@@ -111,10 +149,30 @@ export default function taskDivider(pi) {
         view.update(node);
       }
       if (updateDelegationMessage(node, event)) {
-        // Bound streaming work, but always paint boundaries and final content.
-        if (event.type !== 'message_update' || Date.now() - lastPaint > 100) {
-          lastPaint = Date.now();
-          view.update(node);
+        try {
+          if (ui) {
+            if (event.type.startsWith('message_')) {
+              const content = { message: structuredClone(node.message), streaming: node.streaming };
+              if (event.type === 'message_start' || !assistantRecord) {
+                assistantRecord = transcript.start(node, 'assistant', content);
+              } else transcript.update(assistantRecord, content);
+              if (event.type === 'message_end') transcript.update(assistantRecord, content, true);
+            } else {
+              const content = { tool: structuredClone(node.tool) };
+              if (event.type === 'tool_execution_start' || !toolRecord) {
+                toolRecord = transcript.start(node, 'tool', content);
+              } else transcript.update(toolRecord, content);
+              if (event.type === 'tool_execution_end') transcript.update(toolRecord, content, true);
+            }
+          }
+          // Bound streaming work, but always paint boundaries and final content.
+          if (event.type !== 'message_update' || Date.now() - lastPaint > 100) {
+            lastPaint = Date.now();
+            view.update(node);
+            terminalUI?.requestRender();
+          }
+        } catch (error) {
+          disableUI(error);
         }
       }
     });
@@ -136,6 +194,13 @@ export default function taskDivider(pi) {
       error.usage = usage;
       throw error;
     } finally {
+      // Preserve partial output even when cancellation prevents a final event.
+      try {
+        if (assistantRecord?.streaming) transcript.update(assistantRecord, { streaming: false }, true);
+        if (toolRecord && (!toolRecord.tool.result || toolRecord.tool.partial)) transcript.update(toolRecord, {}, true);
+      } catch (error) {
+        disableUI(error);
+      }
       unsubscribe();
       signal?.removeEventListener('abort', abort);
       activeSessions.delete(session);
@@ -208,6 +273,6 @@ export default function taskDivider(pi) {
   });
   pi.on('session_shutdown', () => {
     view.shutdown();
-    for (const session of activeSessions) session.agent.abort();
+    for (const session of activeSessions) void session.abort().catch(() => {});
   });
 }
