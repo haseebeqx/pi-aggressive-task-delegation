@@ -13,7 +13,7 @@ test('release manifest declares public access and host-provided peers', () => {
   assert.equal(manifest.license, 'MIT');
   assert.ok(manifest.keywords.includes('pi-package'));
   assert.deepEqual(manifest.pi.extensions, ['./src/extension.js']);
-  for (const name of ['@earendil-works/pi-coding-agent', 'typebox']) {
+  for (const name of ['@earendil-works/pi-coding-agent', '@earendil-works/pi-tui', 'typebox']) {
     assert.equal(manifest.peerDependencies[name], '*');
     assert.equal(manifest.dependencies?.[name], undefined);
   }
@@ -31,6 +31,7 @@ test('npm tarball contains only runtime sources, metadata, README, and license',
     'LICENSE',
     'README.md',
     'package.json',
+    'src/delegation-renderer.js',
     'src/delegation-view.js',
     'src/extension.js',
     'src/log-storage.js',

@@ -23,7 +23,7 @@ pi -e npm:@haseebeqx/pi-aggressive-task-delegation
 In Pi:
 
 ```text
-/divide Implement validation for the signup form and add tests
+/delegate-tasks Implement validation for the signup form and add tests
 ```
 
 The supervisor splits divisible work into smaller tasks in dependency order.
@@ -48,7 +48,10 @@ The agent can also call `delegate_task` directly:
 ## Live delegated sessions
 
 In interactive Pi, a live panel identifies the focused worker/reviewer and its
-parent chain. It shows recent assistant text and tool activity, plus completed
+parent chain. Assistant responses use Pi's normal Markdown, code highlighting,
+and thinking formatting; tool calls and output use Pi's native tool panels.
+An orange **Delegated task** indicator appears below the input area while a
+worker or reviewer is focused. The panel also shows completed
 response usage (input/output/cache tokens and estimated cost). Streaming token
 counts are not exact; usage updates when responses finish. Full transcripts stay
 in the child logs rather than entering the supervisor's context.
@@ -57,9 +60,8 @@ While a child is visible, ordinary input (including image attachments) steers
 that session at its next turn boundary, not the main supervisor. Recursive
 children have their own parent: `Main → Worker A → Worker B`.
 
-Use **Ctrl+Esc** or **`/delegate-cancel`** to cancel the visible delegation and
-its descendants. Some terminals cannot distinguish Ctrl+Esc; use the command
-there. Focus and input return to the immediate parent (B → A, not B → Main).
+Use **Ctrl+Esc** to cancel the visible delegation and its descendants.
+Focus and input return to the immediate parent (B → A, not B → Main).
 The parent waits at the delegation boundary and the panel asks what it should do
 instead. Your next instruction is queued to that parent before it continues.
 Cancelling a worker also skips its review. Cancellation does **not** undo edits.

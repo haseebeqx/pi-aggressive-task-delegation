@@ -23,7 +23,7 @@ export class DelegationView {
 
   enter(scope, session, role, task) {
     const node = { scope, parent: scope.parent, session, role, task,
-      usage: undefined, activity: '', text: '' };
+      usage: undefined, activity: '', message: undefined, tool: undefined };
     this.focus = node;
     this.render(node);
     return node;

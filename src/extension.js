@@ -1,7 +1,10 @@
 import {
+  AssistantMessageComponent, ToolExecutionComponent,
   createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager,
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
+import { Text } from '@earendil-works/pi-tui';
+import { createDelegationWidgets, updateDelegationMessage } from './delegation-renderer.js';
 import { DelegationView } from './delegation-view.js';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -38,20 +41,12 @@ export default function taskDivider(pi) {
     if (!ui) return;
     if (!node) {
       ui.setWidget('delegation', undefined);
+      ui.setWidget('delegation-indicator', undefined);
       return;
     }
-    const path = [];
-    for (let current = node; current; current = current.parent) {
-      path.unshift(current.role === 'main' ? 'Main' : `${current.role}: ${current.task}`);
-    }
-    const usage = node.usage ?? emptyUsage();
-    ui.setWidget('delegation', [
-      `Delegated session · ${path.join(' → ')}`,
-      node.waiting ? 'Cancelled child. What should this parent do instead? Type your instruction.'
-        : `${node.activity || 'Working'} · Input steers this session · Ctrl+Esc / /delegate-cancel: return to parent`,
-      `Tokens: ${usage.input} in / ${usage.output} out / ${usage.cacheRead} cache read / ${usage.cacheWrite} cache write · Cost: $${usage.cost.total.toFixed(4)}`,
-      ...node.text.split('\n').slice(-8),
-    ]);
+    const widgets = createDelegationWidgets(node, { AssistantMessageComponent, ToolExecutionComponent, Text });
+    ui.setWidget('delegation', widgets.content);
+    ui.setWidget('delegation-indicator', widgets.indicator, { placement: 'belowEditor' });
   });
 
   // A child receives a new conversation, never a copy of its parent's messages.
@@ -103,6 +98,7 @@ export default function taskDivider(pi) {
     session.agent.toolExecution = 'sequential';
     activeSessions.add(session);
     node = view.enter(scope, session, role, task);
+    node.cwd = parentCtx.cwd;
     const abort = () => session.agent.abort();
     signal?.addEventListener('abort', abort, { once: true });
     const usage = emptyUsage();
@@ -114,25 +110,12 @@ export default function taskDivider(pi) {
         addUsage(usage, event.message.usage);
         view.update(node);
       }
-      if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
-        node.text = (node.text + event.assistantMessageEvent.delta).slice(-4000);
-        // Bound rendering work without creating a timer per stream event.
-        if (Date.now() - lastPaint > 100) {
+      if (updateDelegationMessage(node, event)) {
+        // Bound streaming work, but always paint boundaries and final content.
+        if (event.type !== 'message_update' || Date.now() - lastPaint > 100) {
           lastPaint = Date.now();
           view.update(node);
         }
-      }
-      if (event.type === 'tool_execution_start') {
-        node.activity = `Tool: ${event.toolName} ${JSON.stringify(event.args).slice(0, 300)}`;
-        view.update(node);
-      }
-      if (event.type === 'tool_execution_update' || event.type === 'tool_execution_end') {
-        const result = event.partialResult ?? event.result;
-        const text = result?.content?.filter((part) => part.type === 'text')
-          .map((part) => part.text).join('\n');
-        if (text) node.text = text.slice(-4000);
-        node.activity = `Tool: ${event.toolName}${event.type === 'tool_execution_end' ? ' finished' : ''}`;
-        view.update(node);
       }
     });
     try {
@@ -176,7 +159,7 @@ export default function taskDivider(pi) {
     let tail = Promise.resolve();
     tool.execute = (id, params, signal, onUpdate, ctx) => {
       const result = tail.then(async () => {
-        if (ctx.hasUI) ui = ctx.ui;
+        if (ctx.hasUI && ctx.mode === 'tui') ui = ctx.ui;
         const parent = getParent?.() ?? { role: 'main', session: {
           steer: (text, images) => pi.sendUserMessage(
             images?.length ? [{ type: 'text', text }, ...images] : text,
@@ -207,22 +190,17 @@ export default function taskDivider(pi) {
     if (await view.input(event.text, event.images)) return { action: 'handled' };
     return { action: 'continue' };
   });
-  const cancel = (_args, ctx) => {
-    if (!view.cancel()) ctx.ui.notify('No delegated task is focused.', 'info');
-  };
-  pi.registerCommand('delegate-cancel', {
-    description: 'Cancel the visible delegated task and return to its immediate parent.',
-    handler: cancel,
-  });
   pi.registerShortcut?.('ctrl+escape', {
     description: 'Cancel delegated task and return to parent',
-    handler: (ctx) => cancel('', ctx),
+    handler: (ctx) => {
+      if (!view.cancel()) ctx.ui.notify('No delegated task is focused.', 'info');
+    },
   });
-  pi.registerCommand('divide', {
+  pi.registerCommand('delegate-tasks', {
     description: 'Divide and execute a task sequentially while preserving supervisor context.',
     handler: async (args, ctx) => {
       if (!args.trim()) {
-        ctx.ui.notify('Usage: /divide <task>', 'info');
+        ctx.ui.notify('Usage: /delegate-tasks <task>', 'info');
         return;
       }
       pi.sendUserMessage(`${supervisorPrompt}\n\nTask:\n${args.trim()}`);

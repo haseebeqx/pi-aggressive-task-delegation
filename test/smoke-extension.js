@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { initTheme } from '@earendil-works/pi-coding-agent';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import taskDivider from '../src/extension.js';
 import { emptyUsage } from '../src/workflow.js';
 
@@ -10,6 +12,24 @@ export default function (pi) {
   pi.registerCommand('divider-smoke', {
     description: 'Offline task-divider SDK integration test.',
     handler: async (_args, ctx) => {
+      initTheme('dark', false);
+      const widgetFrames = [];
+      const ui = {
+        ...ctx.ui,
+        setWidget(key, factory, options) {
+          if (!factory) {
+            widgetFrames.push({ key, cleared: true });
+            return;
+          }
+          const component = factory({ requestRender() {} }, ctx.ui.theme);
+          for (const width of [20, 80]) {
+            const lines = component.render(width);
+            assert.ok(lines.every((line) => visibleWidth(line) <= width), 'Widget must fit terminal width');
+            widgetFrames.push({ key, lines, options });
+          }
+          component.invalidate();
+        },
+      };
       let tool;
       taskDivider({
         registerTool: (definition) => { tool = definition; },
@@ -44,7 +64,15 @@ export default function (pi) {
       };
       assert.ok(ctx.model, 'A configured model is needed, but will not be called.');
       const result = await tool.execute('root', { task: 'Parent task' }, undefined,
-        undefined, { ...ctx, modelRegistry: registry });
+        undefined, { ...ctx, mode: 'tui', hasUI: true, ui, modelRegistry: registry });
+      assert.equal(result.isError, false, result.content[0].text);
+      assert.ok(widgetFrames.some((frame) => frame.key === 'delegation-indicator' &&
+        frame.options?.placement === 'belowEditor' && frame.lines.some((line) => /Delegated task/.test(line))));
+      assert.ok(widgetFrames.some((frame) => frame.key === 'delegation' &&
+        frame.lines?.some((line) => /Leaf completed/.test(line))));
+      assert.ok(widgetFrames.some((frame) => frame.key === 'delegation' &&
+        frame.lines?.some((line) => /delegate_task/.test(line))));
+      assert.ok(widgetFrames.some((frame) => frame.key === 'delegation-indicator' && frame.cleared));
       assert.equal(result.isError, false, result.content[0].text);
       assert.equal(calls, 5);
       assert.equal(result.usage.input, 5);
@@ -81,13 +109,22 @@ export default function (pi) {
       // actual extension input hook while its delegate_task call is blocked.
       const handlers = {};
       const commands = {};
+      const shortcuts = {};
       let cancelTool;
       taskDivider({
         registerTool: (definition) => { cancelTool = definition; },
         registerCommand: (name, definition) => { commands[name] = definition; },
+        registerShortcut: (key, definition) => { shortcuts[key] = definition; },
         on: (name, handler) => { handlers[name] = handler; },
         sendUserMessage() { throw new Error('Nested input must not reach Main'); },
       });
+      assert.deepEqual(Object.keys(commands), ['delegate-tasks']);
+      assert.deepEqual(Object.keys(shortcuts), ['ctrl+escape']);
+      let usageNotice;
+      await commands['delegate-tasks'].handler(' ', {
+        ui: { notify: (message) => { usageNotice = message; } },
+      });
+      assert.equal(usageNotice, 'Usage: /delegate-tasks <task>');
       let cancelCalls = 0;
       let intervention;
       const cancelTranscripts = [];
@@ -109,7 +146,7 @@ export default function (pi) {
               stream.end(message);
             }, { once: true });
             intervention = Promise.resolve().then(async () => {
-              await commands['delegate-cancel'].handler('', { ui: { notify() {} } });
+              await shortcuts['ctrl+escape'].handler({ ui: { notify() {} } });
               const response = await handlers.input({
                 source: 'interactive', text: 'Skip the leaf; complete the parent instead.',
               });
@@ -127,7 +164,7 @@ export default function (pi) {
         },
       };
       const recovered = await cancelTool.execute('cancel-root', { task: 'Recover parent' },
-        undefined, undefined, { ...ctx, modelRegistry: cancelRegistry });
+        undefined, undefined, { ...ctx, mode: 'tui', hasUI: true, ui, modelRegistry: cancelRegistry });
       await intervention;
       assert.equal(recovered.isError, false, recovered.content[0].text);
       assert.equal(cancelCalls, 4);
