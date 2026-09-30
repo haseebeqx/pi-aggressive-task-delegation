@@ -1,0 +1,24 @@
+{
+  "name": "@haseebeqx/pi-aggressive-task-delegation",
+  "version": "1.0.0",
+  "description": "Sequential recursive delegation with isolated worker and reviewer contexts for Pi.",
+  "license": "MIT",
+  "author": "haseebeqx",
+  "type": "module",
+  "main": "src/extension.js",
+  "files": ["src", "README.md", "LICENSE"],
+  "engines": { "node": ">=22" },
+  "publishConfig": { "access": "public" },
+  "keywords": ["pi-package", "pi-extension", "delegation", "code-review"],
+  "pi": { "extensions": ["./src/extension.js"] },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "scripts": {
+    "check": "node --check src/extension.js && node --check src/workflow.js && node --check src/log-storage.js",
+    "test": "node --test test/*.test.js",
+    "test:smoke": "pi --offline --no-extensions -e ./test/smoke-extension.js --no-session --mode json -p /divider-smoke",
+    "prepack": "npm run check && npm test"
+  }
+}
