@@ -45,6 +45,30 @@ The agent can also call `delegate_task` directly:
 }
 ```
 
+## Live delegated sessions
+
+In interactive Pi, a live panel identifies the focused worker/reviewer and its
+parent chain. It shows recent assistant text and tool activity, plus completed
+response usage (input/output/cache tokens and estimated cost). Streaming token
+counts are not exact; usage updates when responses finish. Full transcripts stay
+in the child logs rather than entering the supervisor's context.
+
+While a child is visible, ordinary input (including image attachments) steers
+that session at its next turn boundary, not the main supervisor. Recursive
+children have their own parent: `Main → Worker A → Worker B`.
+
+Use **Ctrl+Esc** or **`/delegate-cancel`** to cancel the visible delegation and
+its descendants. Some terminals cannot distinguish Ctrl+Esc; use the command
+there. Focus and input return to the immediate parent (B → A, not B → Main).
+The parent waits at the delegation boundary and the panel asks what it should do
+instead. Your next instruction is queued to that parent before it continues.
+Cancelling a worker also skips its review. Cancellation does **not** undo edits.
+
+The live panel is a bounded recent-output view, not a full interactive replacement
+for Pi's session transcript. Slash commands and shell escapes remain Pi controls;
+ordinary submitted messages are routed to the focused session. Non-interactive
+runs still return the usual concise reports, usage, and log paths.
+
 ## Execution and privacy
 
 - All agents share the working directory. Changes take effect immediately;

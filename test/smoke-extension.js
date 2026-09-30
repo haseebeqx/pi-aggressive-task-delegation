@@ -57,8 +57,11 @@ export default function (pi) {
       const nested = workerEntries.find((e) => e.message?.role === 'toolResult');
       assert.equal(nested.message.toolName, 'delegate_task');
       const nestedLogs = nested.message.details.logs;
-      assert.ok(readEntries(nestedLogs.worker).some((e) =>
+      const leafEntries = readEntries(nestedLogs.worker);
+      assert.ok(leafEntries.some((e) =>
         e.message?.content?.some?.((c) => c.text === 'Leaf completed.')));
+      assert.equal(leafEntries.find((e) => e.customType === 'delegation').data.parentSession,
+        result.details.logs.worker);
       assert.ok(reviewerEntries.some((e) => e.message?.role === 'assistant'));
       for (const path of [...Object.values(result.details.logs), ...Object.values(nestedLogs)]) {
         if (process.platform !== 'win32') {
@@ -74,7 +77,71 @@ export default function (pi) {
         assert.equal(transcripts[index].filter((m) => m.role === 'user').length, 1);
         assert.equal(transcripts[index].filter((m) => m.role === 'assistant').length, 0);
       }
-      console.log('Task-divider SDK smoke test passed (recursive delegation, fresh contexts, persisted logs, usage).');
+      // Cancel a nested worker, then steer its immediate parent through the
+      // actual extension input hook while its delegate_task call is blocked.
+      const handlers = {};
+      const commands = {};
+      let cancelTool;
+      taskDivider({
+        registerTool: (definition) => { cancelTool = definition; },
+        registerCommand: (name, definition) => { commands[name] = definition; },
+        on: (name, handler) => { handlers[name] = handler; },
+        sendUserMessage() { throw new Error('Nested input must not reach Main'); },
+      });
+      let cancelCalls = 0;
+      let intervention;
+      const cancelTranscripts = [];
+      const cancelRegistry = {
+        streamSimple(model, context, options) {
+          const index = cancelCalls++;
+          cancelTranscripts.push(context.messages);
+          const stream = new AssistantMessageEventStream();
+          const message = {
+            role: 'assistant', content: [], api: model.api,
+            provider: model.provider, model: model.id,
+            usage: emptyUsage(), stopReason: 'stop', timestamp: Date.now(),
+          };
+          if (index === 1) {
+            // Keep the nested provider request alive until cancellation arrives.
+            options.signal.addEventListener('abort', () => {
+              message.stopReason = 'aborted';
+              stream.push({ type: 'error', reason: 'aborted', error: message });
+              stream.end(message);
+            }, { once: true });
+            intervention = Promise.resolve().then(async () => {
+              await commands['delegate-cancel'].handler('', { ui: { notify() {} } });
+              const response = await handlers.input({
+                source: 'interactive', text: 'Skip the leaf; complete the parent instead.',
+              });
+              assert.equal(response.action, 'handled');
+            });
+            return stream;
+          }
+          message.content = [index === 0
+            ? { type: 'toolCall', id: 'cancel-leaf', name: 'delegate_task', arguments: { task: 'Cancellable leaf' } }
+            : { type: 'text', text: index === 2 ? 'Parent recovered.' : 'PASS\nRecovery verified.' }];
+          message.stopReason = index === 0 ? 'toolUse' : 'stop';
+          stream.push({ type: 'done', reason: message.stopReason, message });
+          stream.end(message);
+          return stream;
+        },
+      };
+      const recovered = await cancelTool.execute('cancel-root', { task: 'Recover parent' },
+        undefined, undefined, { ...ctx, modelRegistry: cancelRegistry });
+      await intervention;
+      assert.equal(recovered.isError, false, recovered.content[0].text);
+      assert.equal(cancelCalls, 4);
+      assert.ok(cancelTranscripts[2].some((message) => message.role === 'user' &&
+        message.content.some((part) => part.text === 'Skip the leaf; complete the parent instead.')));
+      const recoveredEntries = readEntries(recovered.details.logs.worker);
+      const cancelledResult = recoveredEntries.find((entry) => entry.message?.role === 'toolResult');
+      assert.equal(cancelledResult.message.isError, true);
+      assert.match(cancelledResult.message.content[0].text, /Cancelled by user/);
+      for (const path of [...Object.values(recovered.details.logs),
+        ...Object.values(cancelledResult.message.details.logs)]) {
+        rmSync(dirname(path), { recursive: true });
+      }
+      console.log('Task-divider SDK smoke test passed (recursion, logs, usage, nested cancellation and parent input).');
     },
   });
 }
