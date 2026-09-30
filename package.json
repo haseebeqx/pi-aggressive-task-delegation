@@ -4,6 +4,10 @@
   "description": "Sequential recursive delegation with isolated worker and reviewer contexts for Pi.",
   "license": "MIT",
   "author": "haseebeqx",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haseebeqx/pi-aggressive-task-delegation.git"
+  },
   "type": "module",
   "main": "src/extension.js",
   "files": ["src", "README.md", "LICENSE"],
