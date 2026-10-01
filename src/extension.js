@@ -11,6 +11,7 @@ import { DelegationTranscript, OUTPUT_ENTRY, createTranscriptComponent } from '.
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { allocateLogDirectory, seedPrivateSession } from './log-storage.js';
+import { inheritTools } from './inherited-tools.js';
 import {
   addUsage, createDelegator, emptyUsage, reviewerPrompt, supervisorPrompt, workerPrompt,
 } from './workflow.js';
@@ -114,10 +115,7 @@ export default function taskDivider(pi) {
       thinkingLevel: parentCtx.thinkingLevel,
       resourceLoader: loader,
       sessionManager,
-      tools: role === 'worker'
-        ? ['read', 'bash', 'edit', 'write', 'delegate_task']
-        : ['read', 'bash', 'grep', 'find', 'ls'],
-      customTools: role === 'worker' ? [makeTool(parentCtx, () => node)] : [],
+      ...inheritTools(parentCtx, makeTool(parentCtx, () => node)),
     }).catch((error) => {
       error.logPath = logPath;
       throw error;
@@ -221,6 +219,10 @@ export default function taskDivider(pi) {
     const tool = delegationTool((role, prompt, signal, ctx) =>
       runAgent(role, prompt, signal, inheritedCtx ? {
         ...inheritedCtx, ...ctx,
+        // The SDK supplies these via non-enumerable getters; spreading ctx
+        // alone would silently keep the parent's bridge during recursion.
+        tools: ctx.tools,
+        executeTool: ctx.executeTool,
         modelRegistry: inheritedCtx.modelRegistry,
         thinkingLevel: inheritedCtx.thinkingLevel,
       } : ctx, scope, task));

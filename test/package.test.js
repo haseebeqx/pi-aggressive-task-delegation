@@ -36,6 +36,7 @@ test('npm tarball contains only runtime sources, metadata, README, and license',
     'src/delegation-transcript.js',
     'src/delegation-view.js',
     'src/extension.js',
+    'src/inherited-tools.js',
     'src/log-storage.js',
     'src/workflow.js',
   ]);

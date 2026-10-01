@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { AssistantMessageEventStream } from '@earendil-works/pi-ai';
-import { initTheme } from '@earendil-works/pi-coding-agent';
+import { createAgentSession, DefaultResourceLoader, getAgentDir, initTheme, SessionManager } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import taskDivider from '../src/extension.js';
 import { emptyUsage } from '../src/workflow.js';
@@ -11,7 +12,90 @@ import { emptyUsage } from '../src/workflow.js';
 export default function (pi) {
   pi.registerCommand('divider-smoke', {
     description: 'Offline task-divider SDK integration test.',
-    handler: async (_args, ctx) => {
+    handler: async (_args, commandCtx) => {
+      try {
+      let webCalls = 0;
+      let blockedCalls = 0;
+      let resultHooks = 0;
+      let smokeCompleted = false;
+      const nestedEvents = [];
+      const fixture = (api) => {
+        for (const [name, exposure] of [['web_research', 'deferred'], ['code_research', 'codemode'],
+          ['model_orchestrator', 'model-only'], ['hidden_fixture', 'hidden']]) {
+          api.registerTool({
+            name, label: name, description: 'Offline research fixture', exposure,
+            parameters: Type.Object({ query: Type.String() }),
+            async execute(_id, args, signal) {
+              signal?.throwIfAborted();
+              assert.ok(['web_research', 'code_research'].includes(name));
+              assert.equal(args.query, 'hook-approved', 'Supervisor input hook must run');
+              webCalls++;
+              return { content: [{ type: 'text', text: 'Unredacted evidence' }], details: undefined };
+            },
+          });
+        }
+        api.on('tool_call', (event) => {
+          if (!['web_research', 'code_research'].includes(event.toolName)) return;
+          assert.equal(event.parentToolCallId, 'smoke-root');
+          nestedEvents.push(event.toolCallId);
+          if (event.input.query === 'blocked') {
+            blockedCalls++;
+            return { block: true, reason: 'Research denied by supervisor hook' };
+          }
+          event.input.query = 'hook-approved';
+        });
+        api.on('tool_result', (event) => {
+          if (!['web_research', 'code_research'].includes(event.toolName) || event.isError) return;
+          resultHooks++;
+          return { content: [{ type: 'text', text: 'Verified web evidence' }] };
+        });
+        api.registerTool({
+          name: 'smoke_entry', label: 'Smoke entry', description: 'Run integration assertions',
+          parameters: Type.Object({}),
+          async execute(_id, _args, _signal, _update, ctx) {
+            assert.ok(ctx.tools.some((tool) => tool.name === 'web_research'));
+            assert.ok(ctx.tools.some((tool) => tool.name === 'code_research'));
+            assert.ok(!ctx.tools.some((tool) => tool.name === 'model_orchestrator'));
+            assert.ok(!ctx.tools.some((tool) => tool.name === 'hidden_fixture'));
+            assert.ok(api.getActiveTools().includes('model_orchestrator'), 'Model-only exclusion applies even when active');
+            const denied = await ctx.executeTool('model_orchestrator', { query: 'test' });
+            assert.equal(denied.isError, true, 'Public bridge must reject model-only tools');
+            await runSmoke(ctx);
+            smokeCompleted = true;
+            return { content: [{ type: 'text', text: 'Smoke completed' }], details: undefined };
+          },
+        });
+      };
+      const loader = new DefaultResourceLoader({ cwd: commandCtx.cwd, agentDir: getAgentDir(), noExtensions: true,
+        noSkills: true, noPromptTemplates: true, noThemes: true, extensionFactories: [fixture] });
+      await loader.reload();
+      const { session } = await createAgentSession({ cwd: commandCtx.cwd, model: commandCtx.model,
+        resourceLoader: loader, sessionManager: SessionManager.inMemory() });
+      session.setActiveToolsByName(['smoke_entry', 'model_orchestrator']);
+      let supervisorRequests = 0;
+      session.agent.streamFunction = (model) => {
+        const content = supervisorRequests++ === 0
+          ? { type: 'toolCall', id: 'smoke-root', name: 'smoke_entry', arguments: {} }
+          : { type: 'text', text: 'Done' };
+        const message = { role: 'assistant', content: [content], api: model.api,
+          provider: model.provider, model: model.id, usage: emptyUsage(),
+          stopReason: content.type === 'toolCall' ? 'toolUse' : 'stop', timestamp: Date.now() };
+        const stream = new AssistantMessageEventStream();
+        stream.push({ type: 'done', reason: message.stopReason, message });
+        stream.end(message);
+        return stream;
+      };
+      try {
+        await session.bindExtensions({});
+        await session.prompt('Run the smoke entry.');
+        assert.equal(smokeCompleted, true, JSON.stringify(session.messages.findLast((message) =>
+          message.role === 'toolResult')));
+        assert.equal(supervisorRequests, 2);
+      } finally { session.dispose(); }
+
+      async function runSmoke(toolCtx) {
+      // Pi exposes the live tool bridge through non-enumerable getters.
+      const ctx = { ...toolCtx, tools: toolCtx.tools, executeTool: toolCtx.executeTool };
       initTheme('dark', false);
       const widgetFrames = [];
       const footerFrames = [];
@@ -83,7 +167,10 @@ export default function (pi) {
       });
       const answers = [
         { type: 'toolCall', id: 'leaf-call', name: 'delegate_task', arguments: { task: 'Leaf task' } },
+        { type: 'toolCall', id: 'research-blocked', name: 'web_research', arguments: { query: 'blocked' } },
+        { type: 'toolCall', id: 'research-worker', name: 'web_research', arguments: { query: 'worker' } },
         { type: 'text', text: 'Leaf completed.' },
+        { type: 'toolCall', id: 'research-reviewer', name: 'code_research', arguments: { query: 'reviewer' } },
         { type: 'text', text: 'PASS\nLeaf verified.' },
         { type: 'text', text: 'Parent completed.' },
         { type: 'text', text: 'PASS\nParent verified.' },
@@ -123,8 +210,12 @@ export default function (pi) {
       assert.ok(footerFrames.some((lines) => lines.some((line) => /smoke-branch/.test(line))));
       assert.ok(footerFrames.some((lines) => lines.some((line) => /Smoke status/.test(line))));
       assert.equal(footerComponent, undefined, 'Supervisor footer must be restored');
-      assert.equal(calls, 5);
-      assert.equal(result.usage.input, 5);
+      assert.equal(calls, 8);
+      assert.equal(webCalls, 2, 'Recursive worker and reviewer must inherit research tools');
+      assert.equal(blockedCalls, 1, 'Supervisor hook must prevent child tool execution');
+      assert.equal(resultHooks, 2, 'Supervisor result hooks must run for worker and reviewer');
+      assert.equal(new Set(nestedEvents).size, 3, 'Nested calls must receive unique Pi-assigned ids');
+      assert.equal(result.usage.input, 8);
       assert.equal(result.details.approved, true);
       const readEntries = (path) => readFileSync(path, 'utf8').trim().split('\n').map(JSON.parse);
       const workerEntries = readEntries(result.details.logs.worker);
@@ -150,7 +241,13 @@ export default function (pi) {
       assert.match(result.content[0].text, /Parent completed/);
       assert.doesNotMatch(result.content[0].text, /Leaf completed/);
       // Worker/reviewer each start with exactly one user assignment, not history.
-      for (const index of [0, 1, 2, 4]) {
+      assert.ok(transcripts[3].some((message) => message.role === 'toolResult' &&
+        message.content.some((part) => /Verified web evidence/.test(part.text))), 'Worker receives hook-redacted result');
+      assert.ok(transcripts[5].some((message) => message.role === 'toolResult' &&
+        message.content.some((part) => /Verified web evidence/.test(part.text))), 'Reviewer receives hook-redacted result');
+      assert.ok(transcripts[2].some((message) => message.role === 'toolResult' && message.isError &&
+        message.content.some((part) => /Research denied/.test(part.text))), 'Worker receives blocked result');
+      for (const index of [0, 1, 4, 7]) {
         assert.equal(transcripts[index].filter((m) => m.role === 'user').length, 1);
         assert.equal(transcripts[index].filter((m) => m.role === 'assistant').length, 0);
       }
@@ -299,7 +396,14 @@ export default function (pi) {
         ...Object.values(cancelledResult.message.details.logs)]) {
         rmSync(dirname(path), { recursive: true });
       }
-      console.log('Task-divider SDK smoke test passed (recursion, logs, usage, UI failure recovery, nested cancellation and parent input).');
+      console.log('Task-divider SDK smoke test passed (real supervisor tool bridge/hooks, recursive worker/reviewer inheritance, logs, usage, UI failure recovery, nested cancellation and parent input).');
+      }
+      } catch (error) {
+        // Pi reports command errors but otherwise exits successfully.
+        process.exitCode = 1;
+        console.error(error.stack);
+        throw error;
+      }
     },
   });
 }

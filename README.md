@@ -80,10 +80,32 @@ runs still return the usual concise reports, usage, and log paths.
 
 - All agents share the working directory. Changes take effect immediately;
   there is no sandbox, rollback, or branch isolation. Reviewers are instructed
-  not to modify files, but have access to `bash` for verification.
+  not to modify files; their tool access is not a read-only security boundary.
+- Workers and reviewers inherit the tools listed in the supervisor's Pi tool
+  context: active `direct` tools and registered `deferred`/`codemode` tools,
+  including extension web/search and connected MCP tools with those exposures.
+  Deferred/codemode tools are exposed directly in children. `delegate_task` is
+  replaced with a child-local instance so recursion keeps fresh contexts.
 - Workers use the supervisor's selected model, thinking level, and provider
-  credentials. Child sessions load project instructions and skills, but no
-  other extensions.
+  credentials. Child sessions load project instructions and skills. Other
+  extensions are not reloaded: inherited tools run through the supervisor's live
+  runtime, preserving its tool validation, permission hooks, credentials and MCP
+  connections without restarting extension UI or lifecycle handlers.
+- Inheritance uses Pi's public `ctx.tools` / `ctx.executeTool` API (tested with
+  `0.99.2`). `hidden`, inactive `direct`, and `model-only` tools are excluded from
+  `ctx.tools` and cannot be forwarded through `ctx.executeTool`, even when a
+  `model-only` tool is active. `pi.getAllTools()` provides metadata, not an
+  executable hook-preserving alternative. Calling a raw tool definition's
+  `execute()` would bypass the supervisor's validation and tool hooks, so this
+  extension does not use that workaround. `delegate_task` is supplied locally,
+  not forwarded. The tool snapshot is taken when each child starts; later
+  registrations are not added to an already-running child. Supervisor exposure
+  changes/withdrawals still apply to forwarded calls. Tool-specific session state, UI and nested tool execution
+  remain supervisor-bound, not isolated child state. Tools that change the
+  supervisor's active loadout do not change an existing child's declarations.
+  General supervisor event handlers are not installed in children; tool hooks
+  apply to forwarded calls, not child-local delegation. Nested tool usage is
+  counted by Pi in the supervisor rather than again in child reports/footer.
 - Task decomposition and report brevity are model instructions, not enforced
   limits. There is no hard recursion, budget, or retry limit.
 - Worker and reviewer transcripts persist under
