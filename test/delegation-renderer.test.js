@@ -34,7 +34,7 @@ test('tool output stays separate from assistant Markdown and resets on the next 
   assert.deepEqual(node.message.content, []);
 });
 
-test('widgets pin only compact routing and usage, and theme the bottom indicator orange', () => {
+test('widgets pin only routing without usage stats, and theme the bottom indicator orange', () => {
   const calls = [];
   class Text {
     constructor(text) { this.text = text; }
@@ -53,13 +53,15 @@ test('widgets pin only compact routing and usage, and theme the bottom indicator
     updateResult(result, partial) { calls.push({ result, partial }); }
   }
   const node = { role: 'worker', task: 'Test', cwd: '/tmp', streaming: true,
+    usage: { input: 123, output: 456, cost: { total: 7.89 } },
     message: { role: 'assistant', content: [] },
     tool: { name: 'bash', id: 'a', args: {}, result: { content: [] }, partial: true } };
   const theme = { fg: (_color, text) => text, style: (text, style) => { calls.push(style); return text; } };
   const widgets = createDelegationWidgets(node, { Text, AssistantMessageComponent, ToolExecutionComponent });
   const component = widgets.content({}, theme);
   const lines = component.render(40);
-  assert.equal(lines.length, 3);
+  assert.equal(lines.length, 2);
+  assert.ok(!lines.join('\n').match(/Tokens:|Cost:|123|456|7\.89/));
   assert.equal(lines[0], 'worker');
   assert.ok(!lines.join('\n').includes(node.task));
   assert.ok(!lines.join('\n').includes('formatted'));
@@ -68,5 +70,5 @@ test('widgets pin only compact routing and usage, and theme the bottom indicator
     'Delegated task · worker · Ctrl+Esc: cancel and return to parent');
   assert.ok(calls.some((call) => call.fg?.kind === 'rgb' && call.fg.r === 255 && call.fg.g === 149 && call.fg.b === 0));
   component.invalidate();
-  assert.equal(calls.filter((call) => call === 'invalidate').length, 3);
+  assert.equal(calls.filter((call) => call === 'invalidate').length, 2);
 });

@@ -1,4 +1,4 @@
-// Only routing and usage stay pinned. Output lives in the normal transcript.
+// Only routing stays pinned. Output lives in the normal transcript.
 export function createDelegationWidgets(node, { Text }) {
   const path = [];
   for (let current = node; current; current = current.parent) {
@@ -6,18 +6,16 @@ export function createDelegationWidgets(node, { Text }) {
   }
   return {
     content: (tui, theme) => {
-      const usage = node.usage;
       const header = new Text(theme.fg('muted', path.join(' → ')), 0, 0);
       const activity = new Text(theme.fg('muted', node.waiting
         ? 'Cancelled child. What should this parent do instead? Type your instruction.'
         : `${node.activity || 'Working'} · Input steers this session · Ctrl+Esc: parent`), 0, 0);
-      const stats = new Text(theme.fg('dim', `Tokens: ${usage?.input ?? 0} in / ${usage?.output ?? 0} out / ${usage?.cacheRead ?? 0} cache read / ${usage?.cacheWrite ?? 0} cache write · Cost: $${(usage?.cost.total ?? 0).toFixed(4)}`), 0, 0);
       return {
         render(width) {
-          return [...header.render(width), ...activity.render(width), ...stats.render(width)];
+          return [...header.render(width), ...activity.render(width)];
         },
         invalidate() {
-          for (const component of [header, activity, stats]) component?.invalidate();
+          for (const component of [header, activity]) component?.invalidate();
         },
       };
     },

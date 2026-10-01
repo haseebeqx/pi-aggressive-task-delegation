@@ -6,7 +6,7 @@ including recursive subtasks.
 
 ## Install
 
-Requires Node.js 22+ and Pi. Tested with Pi `0.99.1`.
+Requires Node.js 22+ and Pi. Tested with Pi `0.99.2`.
 
 ```sh
 pi install npm:@haseebeqx/pi-aggressive-task-delegation
@@ -51,10 +51,15 @@ In interactive Pi, a live panel identifies the focused worker/reviewer and its
 parent chain. Assistant responses use Pi's normal Markdown, code highlighting,
 and thinking formatting; tool calls and output use Pi's native tool panels.
 An orange **Delegated task** indicator appears below the input area while a
-worker or reviewer is focused. The panel also shows completed
-response usage (input/output/cache tokens and estimated cost). Streaming token
-counts are not exact; usage updates when responses finish. Full transcripts stay
-in the child logs rather than entering the supervisor's context.
+worker or reviewer is focused. The panel does not show token or cost stats.
+Pi's native footer temporarily shows the focused worker/reviewer's token counts,
+cost, context usage, and model. It follows recursive delegation and returns to
+the supervisor's footer when focus returns to Main or delegation ends. Usage
+updates after completed responses, not as exact streaming token counts. Aggregate
+usage is still returned in tool results and included in Pi's supervisor totals.
+This temporarily replaces any other extension's custom footer; afterward Pi's
+built-in footer is restored.
+Full transcripts stay in the child logs rather than entering the supervisor's context.
 
 While a child is visible, ordinary input (including image attachments) steers
 that session at its next turn boundary, not the main supervisor. Recursive

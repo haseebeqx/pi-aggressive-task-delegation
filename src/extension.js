@@ -1,11 +1,12 @@
 import {
-  AssistantMessageComponent, ToolExecutionComponent,
+  AssistantMessageComponent, ToolExecutionComponent, FooterComponent,
   createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager,
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Text } from '@earendil-works/pi-tui';
 import { createDelegationWidgets, updateDelegationMessage } from './delegation-renderer.js';
 import { DelegationView } from './delegation-view.js';
+import { DelegationFooter } from './delegation-footer.js';
 import { DelegationTranscript, OUTPUT_ENTRY, createTranscriptComponent } from './delegation-transcript.js';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -39,6 +40,7 @@ export default function taskDivider(pi) {
   let ui;
   let terminalUI;
   let lastPaint = 0;
+  const footer = new DelegationFooter(FooterComponent, (error) => disableUI(error));
   const components = { AssistantMessageComponent, ToolExecutionComponent, Text };
   const transcript = new DelegationTranscript((type, data) => pi.appendEntry(type, data), randomUUID);
   pi.registerEntryRenderer(OUTPUT_ENTRY, (entry, _options, theme) =>
@@ -58,6 +60,7 @@ export default function taskDivider(pi) {
     // Rendering must never throw back into the SDK's event dispatch: that can
     // interrupt persistence/settlement and leave prompt() waiting indefinitely.
     try {
+      footer.restore();
       failedUI?.setWidget('delegation', undefined);
       failedUI?.setWidget('delegation-indicator', undefined);
       failedUI?.notify(`Delegation display disabled: ${error.message}`, 'warning');
@@ -66,6 +69,7 @@ export default function taskDivider(pi) {
   const view = new DelegationView((node) => {
     if (!ui) return;
     try {
+      footer.focus(ui, node);
       if (!node) {
         ui.setWidget('delegation', undefined);
         ui.setWidget('delegation-indicator', undefined);
@@ -143,6 +147,7 @@ export default function taskDivider(pi) {
     let assistantRecord;
     let toolRecord;
     const unsubscribe = session.subscribe((event) => {
+      footer.refresh(node);
       if (event.type === 'message_end' &&
           (event.message.role === 'assistant' || event.message.role === 'toolResult')) {
         addUsage(usage, event.message.usage);

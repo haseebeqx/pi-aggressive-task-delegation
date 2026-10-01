@@ -14,6 +14,16 @@ export default function (pi) {
     handler: async (_args, ctx) => {
       initTheme('dark', false);
       const widgetFrames = [];
+      const footerFrames = [];
+      let footerComponent;
+      const paintFooter = () => {
+        if (!footerComponent) return;
+        for (const width of [20, 80]) {
+          const lines = footerComponent.render(width);
+          assert.ok(lines.every((line) => visibleWidth(line) <= width), 'Footer must fit terminal width');
+          footerFrames.push(lines);
+        }
+      };
       const entryRenderers = new Map();
       const transcriptComponents = [];
       const transcriptFrames = [];
@@ -41,6 +51,16 @@ export default function (pi) {
       };
       const ui = {
         ...ctx.ui,
+        setFooter(factory) {
+          footerComponent?.dispose?.();
+          footerComponent = factory?.({ requestRender: paintFooter }, ctx.ui.theme, {
+            getGitBranch: () => 'smoke-branch',
+            getExtensionStatuses: () => new Map([['smoke', 'Smoke status']]),
+            getAvailableProviderCount: () => 1,
+          });
+          if (!factory) footerFrames.push(['restored']);
+          paintFooter();
+        },
         setWidget(key, factory, options) {
           if (!factory) {
             widgetFrames.push({ key, cleared: true });
@@ -98,6 +118,11 @@ export default function (pi) {
       assert.ok(transcriptFrames.some((lines) => lines.some((line) => /delegate_task/.test(line))));
       assert.ok(widgetFrames.some((frame) => frame.key === 'delegation-indicator' && frame.cleared));
       assert.equal(result.isError, false, result.content[0].text);
+      assert.ok(footerFrames.some((lines) => lines.some((line) => /↑1/.test(line))),
+        'Native footer must show completed child usage');
+      assert.ok(footerFrames.some((lines) => lines.some((line) => /smoke-branch/.test(line))));
+      assert.ok(footerFrames.some((lines) => lines.some((line) => /Smoke status/.test(line))));
+      assert.equal(footerComponent, undefined, 'Supervisor footer must be restored');
       assert.equal(calls, 5);
       assert.equal(result.usage.input, 5);
       assert.equal(result.details.approved, true);
@@ -130,7 +155,7 @@ export default function (pi) {
         assert.equal(transcripts[index].filter((m) => m.role === 'assistant').length, 0);
       }
       // UI failures at a final message boundary must not strand SDK prompt().
-      for (const failure of ['widget', 'transcript']) {
+      for (const failure of ['widget', 'transcript', 'footer']) {
         let resilientTool;
         let failed = false;
         let warnings = 0;
@@ -149,6 +174,13 @@ export default function (pi) {
         const resilientUI = {
           ...ui,
           notify() { warnings++; },
+          setFooter(factory) {
+            if (failure === 'footer' && factory && !failed) {
+              failed = true;
+              throw new Error('Footer installation failed');
+            }
+            return ui.setFooter(factory);
+          },
           setWidget(key, factory, options) {
             if (failure === 'widget' && requests > 0 && factory && !failed) {
               failed = true;
