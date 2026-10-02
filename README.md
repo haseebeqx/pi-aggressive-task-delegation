@@ -67,8 +67,17 @@ unknowns and gaps. It does not implement, impose a plan, or prescribe a task spl
 The reviewer checks scope, coverage and evidence—not a proposed plan. `PASS` means
 adequately supported findings with honest limitations, not that every unknown is
 resolved. Failed reviews require Main's decision about further investigation.
-Discovery may recursively gather narrower facts; its child calls default to
-`discover` and explicitly switching to `execute` is rejected before agents run.
+Supervisors and workers offload substantial fact gathering instead of filling their
+own context with broad exploration. Discovery agents and reviewers do lightweight
+orientation, then aggressively delegate broad, multi-area, or large-output searches
+and evidence checks into strictly narrower factual scopes. Focused leaves use bounded
+searches and targeted reads directly; recursion must not forward the same assignment
+or create artificial splits. Child calls default to `discover`, and explicitly
+switching to `execute` is rejected before agents run.
+Discovery reports aim for about 300 words (a soft target), preserving decision-relevant
+evidence and explicit gaps. Parents integrate findings without repeating exploration;
+missing details prompt focused follow-up discovery rather than loading full transcripts.
+These are prompt-level instructions, not enforced context limits or delegation quotas.
 Reports need no new artifacts: existing transcript paths preserve detailed evidence.
 Sequential runs, cancellation, usage accounting and the live UI work as in execution.
 

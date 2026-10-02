@@ -21,7 +21,7 @@ function delegationTool(runAgent, discoveryOnly = false) {
   return {
     name: 'delegate_task',
     label: 'pi aggressive task delegation',
-    description: 'Execute a small task or discover comprehensive scoped codebase/external facts in a fresh context, then independently review. Discovery returns compact evidence-linked findings and gaps, not a plan; Main retains all decisions and no split is required. Execution workers can recursively delegate smaller tasks. Calls run sequentially. On failure, request a focused correction.',
+    description: 'Execute a small task or offload substantial fact gathering with mode discover in a fresh context, then independently review. Keep local discovery to lightweight orientation; aggressively delegate broad, multi-area, or large-output exploration and evidence verification into strictly narrower factual scopes. Never forward the whole assignment or split artificially; focused leaves use bounded searches and targeted reads directly. Discovery is read-only and returns compact decision-relevant evidence and explicit gaps (soft target about 300 words), not a plan or raw logs; Main retains all decisions and no predefined split is required. Execution split rules apply only to execute mode. Calls run sequentially. Request focused follow-up discovery for missing details rather than loading transcripts by default; on failure, request a focused correction.',
     parameters: Type.Object({
       task: Type.String({ minLength: 1, description: 'Concrete execution task and acceptance criteria, or discovery scope/questions.' }),
       mode: Type.Optional(Type.Union([Type.Literal('execute'), Type.Literal('discover')], {

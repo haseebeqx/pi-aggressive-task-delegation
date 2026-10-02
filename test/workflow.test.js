@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createDelegator, emptyUsage, rolePrompts, supervisorPrompt } from '../src/workflow.js';
 
 const report = (text) => ({ report: text, usage: { ...emptyUsage(), input: 1 } });
@@ -108,6 +109,20 @@ test('discovery selects fresh discovery roles, evidence review and transcript la
   assert.match(result.content[0].text, /^Discovery findings:/);
 });
 
+test('discovery approval still requires exact leading PASS, not resolved unknowns', async () => {
+  for (const [verdict, approved] of [
+    ['PASS', true], ['PASS\nEvidence checked; remaining gaps disclosed.', true],
+    ['PASSING', false], ['PASS with caveats', false],
+    ['Evidence checked.\nPASS', false], ['FAIL\nUnsupported claim.', false],
+  ]) {
+    const delegate = createDelegator(async (role) => report(
+      role === 'discoverer' ? 'src/a.js:4 supports X; Y unknown.' : verdict));
+    const result = await delegate({ task: 'Gather scoped evidence', mode: 'discover' });
+    assert.equal(result.details.approved, approved, verdict);
+    assert.equal(result.isError, !approved, verdict);
+  }
+});
+
 test('invalid modes launch no agent; queue recovers', async () => {
   let calls = 0;
   const delegate = createDelegator(async () => { calls++; return report('PASS'); });
@@ -143,4 +158,79 @@ test('discovery prompts gather facts without execution decomposition or plan ins
 test('empty tasks are rejected without launching agents', async () => {
   const delegate = createDelegator(() => assert.fail('Must not run'));
   await assert.rejects(delegate({ task: '  ' }), /non-empty/);
+});
+
+const normalized = (prompt) => prompt.replace(/\s+/g, ' ');
+
+test('supervisor and execution worker offload substantial discovery without execution split prerequisites', () => {
+  for (const prompt of [supervisorPrompt, rolePrompts.worker].map(normalized)) {
+    assert.match(prompt, /Offload substantial fact gathering with mode discover rather than broad local exploration/);
+    assert.match(prompt, /only lightweight orientation locally/);
+    assert.match(prompt, /narrower factual scopes sequentially/);
+    assert.match(prompt, /broad, multi-area, or large-output exploration/);
+    assert.match(prompt, /discovery needs no predefined split or prerequisite plan/);
+    assert.match(prompt, /split rules apply only to execute mode, never to gathering facts in discover mode/);
+    assert.match(prompt, /at least two concrete, useful subtasks, each strictly smaller in scope/);
+    assert.match(prompt, /focused follow-up discovery for missing details rather than loading transcripts by default/);
+  }
+  assert.match(normalized(rolePrompts.worker), /For execution only, delegate only if/);
+  assert.match(normalized(rolePrompts.worker), /Otherwise this is a leaf task: execute it directly/);
+});
+
+test('discovery roles aggressively narrow broad exploration and stop at bounded factual leaves', () => {
+  for (const role of ['discoverer', 'discovery-reviewer']) {
+    const prompt = normalized(rolePrompts[role]);
+    assert.match(prompt, /Do only lightweight orientation locally/);
+    assert.match(prompt, /Aggressively delegate broad, multi-area, or large-output/);
+    assert.match(prompt, /into narrower factual scopes sequentially with mode discover only/);
+    assert.match(prompt, /Each recursive delegation must strictly narrow the assigned scope/);
+    assert.match(prompt, /Never forward the whole assignment unchanged or merely reworded/);
+    assert.match(prompt, /split artificially just to delegate/);
+    assert.match(prompt, /No predefined split is required/);
+    assert.match(prompt, /focused leaf.*bounded searches and targeted reads directly; do not delegate further/);
+    assert.doesNotMatch(prompt, /If useful, delegate|at least two concrete|Identify that split first/);
+  }
+  assert.match(normalized(rolePrompts.discoverer), /Integrate child findings without repeating their exploration/);
+});
+
+test('discovery reports preserve evidence and gaps with a soft target and focused follow-ups', () => {
+  for (const role of ['discoverer', 'discovery-reviewer']) {
+    const prompt = normalized(rolePrompts[role]);
+    assert.match(prompt, /decision-relevant, evidence-linked/);
+    assert.match(prompt, /explicit.*gaps/);
+    assert.match(prompt, /about 300 words as a soft target/);
+    assert.match(prompt, /preserving important scoped evidence and gaps rather than forcing a fixed word limit/);
+    assert.match(prompt, /focused follow-up discovery for missing details rather than loading transcripts by default/);
+    assert.match(prompt, /inspect only relevant transcript portions when necessary to resolve a specific evidence issue/);
+    assert.match(prompt, /Do not.*return raw logs, file dumps, or transcripts/);
+    assert.match(prompt, /Use tools only for read-only exploration/);
+  }
+  assert.match(normalized(rolePrompts.discoverer), /Distinguish verified facts from inference; state coverage and limitations/);
+});
+
+test('discovery reviewer independently checks claims without duplicating every child scope', () => {
+  const prompt = normalized(rolePrompts['discovery-reviewer']);
+  assert.match(prompt, /Treat findings as claims, not proof/);
+  assert.match(prompt, /large-output evidence verification into narrower factual scopes/);
+  assert.match(prompt, /Independently verify decision-relevant claims and evidence, including child findings/);
+  assert.match(prompt, /do not approve solely on child approval or re-explore every child scope/);
+  assert.match(prompt, /targeted checks for contradictions and unsupported claims/);
+  assert.match(prompt, /Begin the final report with exactly PASS or FAIL on its own line/);
+  assert.match(prompt, /PASS means the findings are adequately supported and scoped with limitations honestly disclosed, not that all unknowns are resolved\. Otherwise use FAIL/);
+});
+
+test('delegate tool description advertises context-preserving discovery contracts', () => {
+  // Inspect text without importing the extension's optional Pi peer dependencies.
+  const source = readFileSync(new URL('../src/extension.js', import.meta.url), 'utf8');
+  const description = source.match(/description: '(Execute a small task[^']*)'/)?.[1];
+  assert.ok(description, 'delegate_task description exists');
+  assert.match(description, /offload substantial fact gathering with mode discover/);
+  assert.match(description, /lightweight orientation; aggressively delegate broad, multi-area, or large-output exploration and evidence verification into strictly narrower factual scopes/);
+  assert.match(description, /Never forward the whole assignment or split artificially/);
+  assert.match(description, /focused leaves use bounded searches and targeted reads directly/);
+  assert.match(description, /read-only.*compact decision-relevant evidence and explicit gaps.*soft target about 300 words/);
+  assert.match(description, /not a plan or raw logs; Main retains all decisions and no predefined split is required/);
+  assert.match(description, /Execution split rules apply only to execute mode/);
+  assert.match(description, /Calls run sequentially/);
+  assert.match(description, /focused follow-up discovery for missing details rather than loading transcripts by default/);
 });
