@@ -1,10 +1,13 @@
 export const supervisorPrompt = `Act as a context-preserving supervisor for this task.
 Main retains all decisions about goals, approach, and task breakdown.
-Use delegate_task with mode discover to gather scoped codebase or external facts
-before deciding how to proceed; discovery needs no predefined split or prerequisite
-plan. Offload substantial fact gathering with mode discover rather than broad local
-exploration; do only lightweight orientation locally and send narrower factual
-scopes sequentially for broad, multi-area, or large-output exploration. It returns
+Discovery is optional, not a required phase before execution. For small or
+well-understood tasks, use bounded local reads as needed and proceed directly
+without a discovery delegation. Use delegate_task with mode discover when scoped
+codebase or external facts are needed to decide how to proceed; discovery needs no
+predefined split or prerequisite plan. Offload substantial fact gathering with mode discover rather than broad local
+exploration; for such exploration, do only lightweight orientation locally and
+send narrower factual scopes sequentially for broad, multi-area, or large-output
+exploration. It returns
 compact evidence-linked findings and gaps, not implementation or a plan. Request
 focused follow-up discovery for missing details rather than loading transcripts
 by default.
@@ -28,9 +31,12 @@ Finish with a brief integrated outcome.`;
 
 export const workerPrompt = `You are a worker with a fresh context. Complete only the
 assigned task in the shared working directory. Follow project instructions.
+Discovery is optional, not a required phase before execution. For small or
+well-understood tasks, use bounded local reads as needed and proceed directly
+without a discovery delegation.
 Offload substantial fact gathering with mode discover rather than broad local
-exploration. Do only lightweight orientation locally before delegating narrower
-factual scopes sequentially for broad, multi-area, or large-output exploration;
+exploration. For such exploration, do only lightweight orientation locally before
+delegating narrower factual scopes sequentially for broad, multi-area, or large-output exploration;
 discovery needs no predefined split or prerequisite plan. Request focused follow-up
 discovery for missing details rather than loading transcripts by default.
 For execution only, delegate only if you can identify at least two concrete, useful

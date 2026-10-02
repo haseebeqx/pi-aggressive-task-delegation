@@ -7,12 +7,12 @@ export function createDelegationWidgets(node, { Text }) {
   return {
     content: (tui, theme) => {
       const header = new Text(theme.fg('muted', path.join(' → ')), 0, 0);
-      const activity = new Text(theme.fg('muted', node.waiting
-        ? 'Cancelled child. What should this parent do instead? Type your instruction.'
-        : `${node.activity || 'Working'} · Input steers this session · Ctrl+Esc: parent`), 0, 0);
+      const activity = node.waiting
+        ? new Text(theme.fg('muted', 'Cancelled child. What should this parent do instead? Type your instruction.'), 0, 0)
+        : undefined;
       return {
         render(width) {
-          return [...header.render(width), ...activity.render(width)];
+          return [...header.render(width), ...(activity?.render(width) ?? [])];
         },
         invalidate() {
           for (const component of [header, activity]) component?.invalidate();

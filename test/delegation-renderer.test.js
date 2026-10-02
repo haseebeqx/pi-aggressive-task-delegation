@@ -52,7 +52,7 @@ test('widgets pin only routing without usage stats, and theme the bottom indicat
     setExpanded(expanded) { calls.push({ expanded }); }
     updateResult(result, partial) { calls.push({ result, partial }); }
   }
-  const node = { role: 'worker', task: 'Test', cwd: '/tmp', streaming: true,
+  const node = { role: 'worker', task: 'Test', cwd: '/tmp', streaming: true, activity: 'Tool: bash finished',
     usage: { input: 123, output: 456, cost: { total: 7.89 } },
     message: { role: 'assistant', content: [] },
     tool: { name: 'bash', id: 'a', args: {}, result: { content: [] }, partial: true } };
@@ -60,7 +60,7 @@ test('widgets pin only routing without usage stats, and theme the bottom indicat
   const widgets = createDelegationWidgets(node, { Text, AssistantMessageComponent, ToolExecutionComponent });
   const component = widgets.content({}, theme);
   const lines = component.render(40);
-  assert.equal(lines.length, 2);
+  assert.deepEqual(lines, ['worker']);
   assert.ok(!lines.join('\n').match(/Tokens:|Cost:|123|456|7\.89/));
   assert.equal(lines[0], 'worker');
   assert.ok(!lines.join('\n').includes(node.task));
@@ -70,5 +70,14 @@ test('widgets pin only routing without usage stats, and theme the bottom indicat
     'Delegated task · worker · Ctrl+Esc: cancel and return to parent');
   assert.ok(calls.some((call) => call.fg?.kind === 'rgb' && call.fg.r === 255 && call.fg.g === 149 && call.fg.b === 0));
   component.invalidate();
-  assert.equal(calls.filter((call) => call === 'invalidate').length, 2);
+  assert.equal(calls.filter((call) => call === 'invalidate').length, 1);
+
+  node.waiting = true;
+  const waitingComponent = createDelegationWidgets(node, { Text }).content({}, theme);
+  assert.deepEqual(waitingComponent.render(80), [
+    'worker',
+    'Cancelled child. What should this parent do instead? Type your instruction.',
+  ]);
+  waitingComponent.invalidate();
+  assert.equal(calls.filter((call) => call === 'invalidate').length, 3);
 });

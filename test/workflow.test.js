@@ -184,7 +184,7 @@ test('discovery prompts gather facts without execution decomposition or plan ins
     assert.doesNotMatch(prompt, /Identify that split first|Complete only the|run appropriate\nchecks/);
   }
   assert.equal(rolePrompts['discovery-reviewer'], undefined);
-  assert.match(supervisorPrompt, /discovery needs no predefined split/);
+  assert.match(normalized(supervisorPrompt), /discovery needs no predefined split/);
 });
 
 test('empty tasks are rejected without launching agents', async () => {
@@ -193,6 +193,14 @@ test('empty tasks are rejected without launching agents', async () => {
 });
 
 const normalized = (prompt) => prompt.replace(/\s+/g, ' ');
+
+test('supervisor and execution worker can skip discovery for small or well-understood tasks', () => {
+  for (const prompt of [supervisorPrompt, rolePrompts.worker].map(normalized)) {
+    assert.match(prompt, /Discovery is optional, not a required phase before execution/);
+    assert.match(prompt, /For small or well-understood tasks, use bounded local reads as needed and proceed directly without a discovery delegation/);
+    assert.doesNotMatch(prompt, /gather scoped codebase or external facts before deciding how to proceed/);
+  }
+});
 
 test('supervisor and execution worker offload substantial discovery without execution split prerequisites', () => {
   for (const prompt of [supervisorPrompt, rolePrompts.worker].map(normalized)) {
@@ -256,6 +264,8 @@ test('delegate tool description advertises context-preserving discovery contract
   const description = source.match(/description: '(Execute a small task[^']*)'/)?.[1];
   assert.ok(description, 'delegate_task description exists');
   assert.match(description, /offload substantial fact gathering with mode discover/);
+  assert.match(description, /Discovery is optional: for small or well-understood tasks, use bounded local reads as needed and proceed directly without discovery delegation/);
+  assert.match(description, /For substantial exploration, keep local discovery to lightweight orientation/);
   assert.match(description, /Execution receives independent review; discovery verifies its own evidence without a separate review stage/);
   assert.match(description, /lightweight orientation; aggressively delegate broad, multi-area, or large-output exploration and evidence verification into strictly narrower factual scopes/);
   assert.match(description, /Never forward the whole assignment or split artificially/);

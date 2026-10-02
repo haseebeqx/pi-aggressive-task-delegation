@@ -45,7 +45,12 @@ The agent can also call `delegate_task` directly:
 }
 ```
 
-### Discovery before decisions
+### Optional discovery
+
+Discovery is not a required phase before execution. For small or well-understood
+tasks, supervisors and workers can use bounded local reads as needed and proceed
+directly without a discovery delegation. Substantial fact gathering is still
+offloaded to keep broad exploration out of their context.
 
 `delegate_task` accepts optional `mode: "execute" | "discover"` (default:
 `"execute"`). Main can gather initial information through discovery without a
