@@ -13,17 +13,20 @@ import { randomUUID } from 'node:crypto';
 import { allocateLogDirectory, seedPrivateSession } from './log-storage.js';
 import { inheritTools } from './inherited-tools.js';
 import {
-  addUsage, createDelegator, emptyUsage, reviewerPrompt, supervisorPrompt, workerPrompt,
+  addUsage, createDelegator, emptyUsage, rolePrompts, supervisorPrompt,
 } from './workflow.js';
 
-function delegationTool(runAgent) {
-  const delegate = createDelegator(runAgent);
+function delegationTool(runAgent, discoveryOnly = false) {
+  const delegate = createDelegator(runAgent, { discoveryOnly });
   return {
     name: 'delegate_task',
     label: 'pi aggressive task delegation',
-    description: 'Execute one small task in a fresh worker context, then independently review it. Returns only concise reports. Workers can recursively delegate. Calls run sequentially. On failure, delegate a focused correction with the findings.',
+    description: 'Execute a small task or discover comprehensive scoped codebase/external facts in a fresh context, then independently review. Discovery returns compact evidence-linked findings and gaps, not a plan; Main retains all decisions and no split is required. Execution workers can recursively delegate smaller tasks. Calls run sequentially. On failure, request a focused correction.',
     parameters: Type.Object({
-      task: Type.String({ minLength: 1, description: 'Concrete task and acceptance criteria.' }),
+      task: Type.String({ minLength: 1, description: 'Concrete execution task and acceptance criteria, or discovery scope/questions.' }),
+      mode: Type.Optional(Type.Union([Type.Literal('execute'), Type.Literal('discover')], {
+        description: 'Defaults to execute; discovery children default to discover and cannot execute.',
+      })),
       context: Type.Optional(Type.String({ description: 'Only relevant paths, requirements, decisions, and prior summaries. No transcripts.' })),
     }),
     async execute(_id, params, signal, onUpdate, ctx) {
@@ -97,7 +100,7 @@ export default function taskDivider(pi) {
       noExtensions: true,
       noPromptTemplates: true,
       noThemes: true,
-      appendSystemPrompt: [role === 'worker' ? workerPrompt : reviewerPrompt],
+      appendSystemPrompt: [rolePrompts[role]],
     });
     await loader.reload();
     signal?.throwIfAborted();
@@ -115,7 +118,8 @@ export default function taskDivider(pi) {
       thinkingLevel: parentCtx.thinkingLevel,
       resourceLoader: loader,
       sessionManager,
-      ...inheritTools(parentCtx, makeTool(parentCtx, () => node)),
+      ...inheritTools(parentCtx, makeTool(parentCtx, () => node, role.startsWith('discover')),
+        { discoveryOnly: role.startsWith('discover') }),
     }).catch((error) => {
       error.logPath = logPath;
       throw error;
@@ -212,7 +216,7 @@ export default function taskDivider(pi) {
     }
   }
 
-  function makeTool(inheritedCtx, getParent) {
+  function makeTool(inheritedCtx, getParent, discoveryOnly = false) {
     // A separate queue per context serializes siblings without blocking recursion.
     let scope;
     let task;
@@ -225,7 +229,7 @@ export default function taskDivider(pi) {
         executeTool: ctx.executeTool,
         modelRegistry: inheritedCtx.modelRegistry,
         thinkingLevel: inheritedCtx.thinkingLevel,
-      } : ctx, scope, task));
+      } : ctx, scope, task), discoveryOnly);
     const execute = tool.execute;
     // Keep scope allocation inside a per-context queue, not before it.
     let tail = Promise.resolve();

@@ -45,6 +45,43 @@ The agent can also call `delegate_task` directly:
 }
 ```
 
+### Discovery before decisions
+
+`delegate_task` accepts optional `mode: "execute" | "discover"` (default:
+`"execute"`). Main can gather initial information through discovery without a
+predefined task breakdown or prerequisite split, then retain all decisions about
+approach and execution:
+
+```json
+{
+  "mode": "discover",
+  "task": "Investigate signup validation: relevant code, behavior, tests, constraints, and applicable external API documentation",
+  "context": "Gather facts and unknowns only; Main will decide what to change."
+}
+```
+
+Discovery uses a fresh discovery agent and a fresh independent discovery reviewer.
+It gathers comprehensive information within the requested scope and returns compact
+findings linked to files/symbols/lines or external URLs/passages, plus coverage,
+unknowns and gaps. It does not implement, impose a plan, or prescribe a task split.
+The reviewer checks scope, coverage and evidence—not a proposed plan. `PASS` means
+adequately supported findings with honest limitations, not that every unknown is
+resolved. Failed reviews require Main's decision about further investigation.
+Discovery may recursively gather narrower facts; its child calls default to
+`discover` and explicitly switching to `execute` is rejected before agents run.
+Reports need no new artifacts: existing transcript paths preserve detailed evidence.
+Sequential runs, cancellation, usage accounting and the live UI work as in execution.
+
+**Read-only policy is not a sandbox.** Discovery agents and their reviewers are
+instructed not to mutate files or external state. Direct inherited tools named
+`write`, `edit`, and `apply_patch` are blocked before forwarding. Shell remains
+available for exploration (`ls`, `rg`, `find`, etc.); arbitrary shell commands and
+inherited custom/MCP tools cannot be safely classified generically and remain
+prompt-enforced read-only. Aliases, tool orchestrators and nested calls may bypass
+the name guard. Do not treat it as a security boundary; use supervisor permission
+hooks or an OS sandbox for untrusted tools. Avoid installs and tests that write
+caches/artifacts during discovery. Pi still persists its ordinary transcript logs.
+
 ## Live delegated sessions
 
 In interactive Pi, a live panel identifies the focused worker/reviewer and its
@@ -108,7 +145,7 @@ runs still return the usual concise reports, usage, and log paths.
   counted by Pi in the supervisor rather than again in child reports/footer.
 - Task decomposition and report brevity are model instructions, not enforced
   limits. There is no hard recursion, budget, or retry limit.
-- Worker and reviewer transcripts persist under
+- Worker, reviewer, discovery and discovery-reviewer transcripts persist under
   `<Pi agent directory>/delegation-logs/` (normally `~/.pi/agent/`). Tool results
   include their paths in text and `details.logs` for on-demand inspection.
 - Logs may contain sensitive assignments, instructions, messages, and tool

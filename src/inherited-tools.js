@@ -1,6 +1,6 @@
 // ExtensionToolContext is Pi's public, permission-aware tool bridge. Reuse the
 // supervisor's live runtime instead of loading extensions (and their UI) again.
-export function inheritTools(parentCtx, delegateTool) {
+export function inheritTools(parentCtx, delegateTool, { discoveryOnly = false } = {}) {
   if (!Array.isArray(parentCtx.tools) || typeof parentCtx.executeTool !== 'function') {
     throw new Error('Tool inheritance requires Pi ExtensionToolContext.tools and executeTool (tested with Pi 0.99.2).');
   }
@@ -13,6 +13,11 @@ export function inheritTools(parentCtx, delegateTool) {
         // to be restarted, and every callable tool is available to each child.
         exposure: 'direct',
         async execute(_id, args, signal, onUpdate) {
+          // A small guard, not a sandbox: arbitrary custom tools and shell
+          // commands cannot be classified safely. Exploration remains prompt-led.
+          if (discoveryOnly && /^(?:write|edit|apply_patch)$/.test(tool.name)) {
+            throw new Error(`Discovery is read-only: ${tool.name} is blocked.`);
+          }
           const outcome = await parentCtx.executeTool(tool.name, args, { signal, onUpdate });
           // Pi already adds nested usage to the supervisor's calling tool. Do
           // not add it again via the child's delegation report.

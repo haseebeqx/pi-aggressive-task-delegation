@@ -64,6 +64,21 @@ test('recursive bridging stays callable and uses a new child-local delegate', as
   assert.equal(calls, 1);
 });
 
+test('discovery blocks known mutation tools before forwarding, but keeps exploration tools', async () => {
+  const calls = [];
+  const parent = { tools: ['write', 'edit', 'apply_patch', 'read', 'bash', 'web_search'].map((name) => tool(name)),
+    async executeTool(name) { calls.push(name); return { result: { content: [] }, isError: false }; } };
+  const inherited = inheritTools(parent, tool('delegate_task'), { discoveryOnly: true });
+  for (const name of ['write', 'edit', 'apply_patch']) {
+    await assert.rejects(inherited.customTools.find((t) => t.name === name).execute('id', {}), /read-only/);
+  }
+  assert.deepEqual(calls, []);
+  for (const name of ['read', 'bash', 'web_search']) await inherited.customTools.find((t) => t.name === name).execute('id', {});
+  assert.deepEqual(calls, ['read', 'bash', 'web_search']);
+  await inheritTools(parent, tool('delegate_task')).customTools[0].execute('id', {});
+  assert.equal(calls.at(-1), 'write');
+});
+
 test('fails clearly without the public Pi tool bridge rather than falling back to an allowlist', () => {
   assert.throws(() => inheritTools({}, tool('delegate_task')), /ExtensionToolContext/);
 });

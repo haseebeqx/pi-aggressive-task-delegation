@@ -251,6 +251,44 @@ export default function (pi) {
         assert.equal(transcripts[index].filter((m) => m.role === 'user').length, 1);
         assert.equal(transcripts[index].filter((m) => m.role === 'assistant').length, 0);
       }
+      // Discovery uses its own prompts and keeps recursive calls read-only.
+      const discoveryAnswers = [
+        { type: 'toolCall', id: 'forbidden-execution', name: 'delegate_task', arguments: { task: 'Must not implement', mode: 'execute' } },
+        { type: 'toolCall', id: 'fact-child', name: 'delegate_task', arguments: { task: 'Narrow factual question' } },
+        { type: 'text', text: 'README.md:1 identifies the project; external coverage unknown.' },
+        { type: 'text', text: 'PASS\nEvidence and gap checked.' },
+        { type: 'text', text: 'README.md:1 identifies the project. Narrow findings integrated.' },
+        { type: 'text', text: 'PASS\nScoped discovery verified.' },
+      ];
+      let discoveryCalls = 0;
+      const discoveryRegistry = { streamSimple(model) {
+        const content = discoveryAnswers[discoveryCalls++];
+        assert.ok(content, 'Unexpected discovery model request');
+        const message = { role: 'assistant', content: [content], api: model.api,
+          provider: model.provider, model: model.id, usage: { ...emptyUsage(), input: 1 },
+          stopReason: content.type === 'toolCall' ? 'toolUse' : 'stop', timestamp: Date.now() };
+        const stream = new AssistantMessageEventStream();
+        stream.push({ type: 'done', reason: message.stopReason, message });
+        stream.end(message);
+        return stream;
+      } };
+      const discovered = await tool.execute('discovery-root', { task: 'Gather project facts', mode: 'discover' },
+        undefined, undefined, { ...ctx, modelRegistry: discoveryRegistry });
+      assert.equal(discovered.isError, false, discovered.content[0].text);
+      assert.equal(discoveryCalls, 6);
+      assert.equal(discovered.usage.input, 6);
+      const discoveryEntries = readEntries(discovered.details.logs.discoverer);
+      const discoveryReviews = readEntries(discovered.details.logs['discovery-reviewer']);
+      assert.match(JSON.stringify(discoveryEntries.filter((e) => e.message?.role === 'system')), /You are a discovery agent/);
+      assert.match(JSON.stringify(discoveryReviews.filter((e) => e.message?.role === 'system')), /independent discovery reviewer/);
+      const discoveryResults = discoveryEntries.filter((e) => e.message?.role === 'toolResult');
+      assert.equal(discoveryResults[0].message.isError, true);
+      assert.match(discoveryResults[0].message.content[0].text, /cannot delegate execution/);
+      const discoveryChildLogs = discoveryResults[1].message.details.logs;
+      assert.deepEqual(Object.keys(discoveryChildLogs), ['discoverer', 'discovery-reviewer']);
+      for (const path of [...Object.values(discovered.details.logs), ...Object.values(discoveryChildLogs)]) {
+        rmSync(dirname(path), { recursive: true });
+      }
       // UI failures at a final message boundary must not strand SDK prompt().
       for (const failure of ['widget', 'transcript', 'footer']) {
         let resilientTool;

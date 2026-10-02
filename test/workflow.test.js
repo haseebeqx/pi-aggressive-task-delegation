@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDelegator, emptyUsage } from '../src/workflow.js';
+import { createDelegator, emptyUsage, rolePrompts, supervisorPrompt } from '../src/workflow.js';
 
 const report = (text) => ({ report: text, usage: { ...emptyUsage(), input: 1 } });
 
@@ -87,6 +87,57 @@ test('cancellation stops before review and prevents queued work from starting', 
   assert.equal(result.isError, true);
   await assert.rejects(delegate({ task: 'Next' }, controller.signal), /abort/i);
   assert.deepEqual(calls, ['worker']);
+});
+
+test('discovery selects fresh discovery roles, evidence review and transcript labels', async () => {
+  const calls = [];
+  const phases = [];
+  const delegate = createDelegator(async (role, prompt) => {
+    calls.push({ role, prompt });
+    return { ...report(role === 'discoverer' ? 'src/a.js:4 establishes X; Y unknown.' : 'PASS\nEvidence checked.'),
+      logPath: `/logs/${role}.jsonl` };
+  });
+  const result = await delegate({ task: 'Explore X', mode: 'discover' }, undefined, (phase) => phases.push(phase));
+  assert.deepEqual(calls.map((c) => c.role), ['discoverer', 'discovery-reviewer']);
+  assert.match(calls[1].prompt, /Discovery findings.*verify independently/s);
+  assert.match(calls[1].prompt, /src\/a.js:4/);
+  assert.deepEqual(phases, ['Discovering', 'Reviewing']);
+  assert.equal(result.isError, false);
+  assert.equal(result.usage.input, 2);
+  assert.deepEqual(result.details.logs, { discoverer: '/logs/discoverer.jsonl', 'discovery-reviewer': '/logs/discovery-reviewer.jsonl' });
+  assert.match(result.content[0].text, /^Discovery findings:/);
+});
+
+test('invalid modes launch no agent; queue recovers', async () => {
+  let calls = 0;
+  const delegate = createDelegator(async () => { calls++; return report('PASS'); });
+  for (const mode of ['plan', '', null, 42]) {
+    await assert.rejects(delegate({ task: 'Task', mode }), /mode must/);
+  }
+  assert.equal(calls, 0);
+  await delegate({ task: 'Task', mode: 'execute' });
+  assert.equal(calls, 2);
+});
+
+test('discovery recursion defaults to discovery and cannot switch to execution', async () => {
+  const roles = [];
+  const child = createDelegator(async (role) => { roles.push(role); return report('PASS'); }, { discoveryOnly: true });
+  await assert.rejects(child({ task: 'Implement', mode: 'execute' }), /cannot delegate execution/);
+  assert.deepEqual(roles, []);
+  await child({ task: 'Find evidence' });
+  assert.deepEqual(roles, ['discoverer', 'discovery-reviewer']);
+});
+
+test('discovery prompts gather facts without execution decomposition or plan instructions', () => {
+  for (const role of ['discoverer', 'discovery-reviewer']) {
+    const prompt = rolePrompts[role];
+    assert.match(prompt, /Main retains all decisions/);
+    assert.match(prompt, /Do not implement, modify files, write artifacts, propose/);
+    assert.match(prompt, /unknowns\/gaps/);
+    assert.doesNotMatch(prompt, /Identify that split first|Complete only the|run appropriate\nchecks/);
+  }
+  assert.match(rolePrompts['discovery-reviewer'], /not against a proposed plan/);
+  assert.match(supervisorPrompt, /discovery needs no predefined split/);
 });
 
 test('empty tasks are rejected without launching agents', async () => {
