@@ -256,9 +256,7 @@ export default function (pi) {
         { type: 'toolCall', id: 'forbidden-execution', name: 'delegate_task', arguments: { task: 'Must not implement', mode: 'execute' } },
         { type: 'toolCall', id: 'fact-child', name: 'delegate_task', arguments: { task: 'Narrow factual question' } },
         { type: 'text', text: 'README.md:1 identifies the project; external coverage unknown.' },
-        { type: 'text', text: 'PASS\nEvidence and gap checked.' },
         { type: 'text', text: 'README.md:1 identifies the project. Narrow findings integrated.' },
-        { type: 'text', text: 'PASS\nScoped discovery verified.' },
       ];
       let discoveryCalls = 0;
       const discoveryRegistry = { streamSimple(model) {
@@ -275,17 +273,17 @@ export default function (pi) {
       const discovered = await tool.execute('discovery-root', { task: 'Gather project facts', mode: 'discover' },
         undefined, undefined, { ...ctx, modelRegistry: discoveryRegistry });
       assert.equal(discovered.isError, false, discovered.content[0].text);
-      assert.equal(discoveryCalls, 6);
-      assert.equal(discovered.usage.input, 6);
+      assert.equal(discoveryCalls, 4);
+      assert.equal(discovered.usage.input, 4);
+      assert.deepEqual(Object.keys(discovered.details.logs), ['discoverer']);
+      assert.doesNotMatch(discovered.content[0].text, /Review:/);
       const discoveryEntries = readEntries(discovered.details.logs.discoverer);
-      const discoveryReviews = readEntries(discovered.details.logs['discovery-reviewer']);
       assert.match(JSON.stringify(discoveryEntries.filter((e) => e.message?.role === 'system')), /You are a discovery agent/);
-      assert.match(JSON.stringify(discoveryReviews.filter((e) => e.message?.role === 'system')), /independent discovery reviewer/);
       const discoveryResults = discoveryEntries.filter((e) => e.message?.role === 'toolResult');
       assert.equal(discoveryResults[0].message.isError, true);
       assert.match(discoveryResults[0].message.content[0].text, /cannot delegate execution/);
       const discoveryChildLogs = discoveryResults[1].message.details.logs;
-      assert.deepEqual(Object.keys(discoveryChildLogs), ['discoverer', 'discovery-reviewer']);
+      assert.deepEqual(Object.keys(discoveryChildLogs), ['discoverer']);
       for (const path of [...Object.values(discovered.details.logs), ...Object.values(discoveryChildLogs)]) {
         rmSync(dirname(path), { recursive: true });
       }

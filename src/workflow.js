@@ -18,7 +18,8 @@ only to execute mode, never to gathering facts in discover mode. Call delegate_t
 once at a time, in dependency order when dependencies exist. Pass only the requirements,
 relevant paths, decisions, and concise prior results needed for each subtask.
 Execution runs a fresh worker followed by a fresh independent reviewer; discovery
-runs a fresh fact-gatherer followed by an independent evidence/scope reviewer.
+runs a fresh fact-gatherer that verifies evidence within discovery itself, without
+a separate review stage.
 If review fails, delegate a focused correction with the findings before proceeding.
 Do not claim success with unresolved failures. Keep your own context focused on the
 goal, decisions, and compact reports. Delegation returns transcript log paths;
@@ -64,13 +65,19 @@ a plan or task breakdown, or require a prerequisite split before gathering facts
 Use tools only for read-only exploration. Shell commands and inherited custom tools
 are not sandboxed: avoid mutations, side effects, installs, or checks that write.
 Do only lightweight orientation locally. Aggressively delegate broad, multi-area,
-or large-output exploration into narrower factual scopes sequentially with mode
+or large-output exploration and evidence verification into narrower factual scopes sequentially with mode
 discover only; never switch to execution. Each recursive delegation must strictly
 narrow the assigned scope. Never forward the whole assignment unchanged or merely
 reworded, or split artificially just to delegate. No predefined split is required.
 When the scope is a focused leaf with no useful narrower factual scope, use bounded
 searches and targeted reads directly; do not delegate further. Integrate child
-findings without repeating their exploration. Request focused follow-up discovery
+findings without repeating their exploration. Verify decision-relevant claims
+against relevant codebase or external evidence within discovery itself. Treat
+child findings as claims, not proof; use targeted checks for contradictions and
+unsupported claims without re-exploring every child scope. Check scope, evidence
+accuracy, coverage, unsupported inferences, and disclosed unknowns/gaps.
+Report checks actually performed; no separate reviewer or PASS/FAIL verdict is required.
+Request focused follow-up discovery
 for missing details rather than loading transcripts by default; inspect only
 relevant transcript portions when necessary to resolve a specific evidence issue.
 Return compact, decision-relevant, evidence-linked findings: relevant files/symbols/
@@ -80,37 +87,9 @@ coverage and limitations. Aim for about 300 words as a soft target, preserving
 important scoped evidence and gaps rather than forcing a fixed word limit.
 Do not create report artifacts or return raw logs, file dumps, or transcripts.`;
 
-export const discoveryReviewerPrompt = `You are an independent discovery reviewer
-with a fresh context. Verify the discovery findings against relevant codebase and
-external evidence, not against a proposed plan. Treat findings as claims, not proof.
-Check relevance to the assigned scope, evidence accuracy, coverage, unsupported
-inferences, and disclosed unknowns/gaps. Main retains all decisions.
-Do not implement, modify files, write artifacts, propose a plan or task breakdown,
-or require a prerequisite split. Use tools only for read-only exploration; shell
-and inherited custom tools are not sandboxed, so avoid side effects.
-Do only lightweight orientation locally. Aggressively delegate broad, multi-area,
-or large-output evidence verification into narrower factual scopes sequentially
-with mode discover only. Each recursive delegation must strictly narrow the
-assigned scope. Never forward the whole assignment unchanged or merely reworded,
-or split artificially just to delegate. No predefined split is required. For a
-focused leaf, use bounded searches and targeted reads directly; do not delegate
-further. Independently verify decision-relevant claims and evidence, including
-child findings; do not approve solely on child approval or re-explore every child
-scope. Use targeted checks for contradictions and unsupported claims. Request
-focused follow-up discovery for missing details rather than loading transcripts
-by default; inspect only relevant transcript portions when necessary to resolve
-a specific evidence issue.
-Begin the final report with exactly PASS or FAIL on its own line. PASS means the
-findings are adequately supported and scoped with limitations honestly disclosed,
-not that all unknowns are resolved. Otherwise use FAIL. Return compact,
-decision-relevant, evidence-linked corrections, checks actually performed, and
-explicit remaining gaps. Aim for about 300 words as a soft target, preserving
-important scoped evidence and gaps rather than forcing a fixed word limit.
-Do not return raw logs, file dumps, or transcripts.`;
-
 export const rolePrompts = {
   worker: workerPrompt, reviewer: reviewerPrompt,
-  discoverer: discoveryPrompt, 'discovery-reviewer': discoveryReviewerPrompt,
+  discoverer: discoveryPrompt,
 };
 
 export function emptyUsage() {
@@ -141,7 +120,7 @@ export function createDelegator(runAgent, { discoveryOnly = false } = {}) {
       if (discoveryOnly && mode !== 'discover') throw new Error('Discovery cannot delegate execution.');
       const discovering = mode === 'discover';
       const workerRole = discovering ? 'discoverer' : 'worker';
-      const reviewRole = discovering ? 'discovery-reviewer' : 'reviewer';
+      const reviewRole = 'reviewer';
       const reportLabel = discovering ? 'Discovery findings' : 'Worker report';
       const context = request.context?.trim() || '(none supplied)';
       const assignment = `Assigned task:\n${task}\n\nRelevant context:\n${context}`;
@@ -159,6 +138,12 @@ export function createDelegator(runAgent, { discoveryOnly = false } = {}) {
         addUsage(usage, worker.usage);
         if (worker.logPath) logs[workerRole] = worker.logPath;
         signal?.throwIfAborted();
+        if (discovering) {
+          return {
+            content: [{ type: 'text', text: `${reportLabel}:\n${worker.report}${logText()}` }],
+            details: details(true), usage, isError: false,
+          };
+        }
         onProgress?.('Reviewing');
         review = await runAgent(reviewRole, `${assignment}\n\n${reportLabel} (verify independently):\n${worker.report}`, signal, request.ctx);
         addUsage(usage, review.usage);
@@ -171,7 +156,7 @@ export function createDelegator(runAgent, { discoveryOnly = false } = {}) {
         };
       } catch (error) {
         addUsage(usage, error.usage);
-        if (error.logPath) logs[worker ? reviewRole : workerRole] = error.logPath;
+        if (error.logPath) logs[worker && !discovering ? reviewRole : workerRole] = error.logPath;
         return {
           content: [{ type: 'text', text: `Delegation failed: ${error.message}${worker ? `\n\nCompleted ${reportLabel.toLowerCase()}:\n${worker.report}` : ''}${logText()}` }],
           details: details(false), usage, isError: true,

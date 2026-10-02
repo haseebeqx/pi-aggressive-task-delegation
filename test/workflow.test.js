@@ -90,7 +90,7 @@ test('cancellation stops before review and prevents queued work from starting', 
   assert.deepEqual(calls, ['worker']);
 });
 
-test('discovery selects fresh discovery roles, evidence review and transcript labels', async () => {
+test('discovery returns verified findings directly without a reviewer', async () => {
   const calls = [];
   const phases = [];
   const delegate = createDelegator(async (role, prompt) => {
@@ -99,28 +99,60 @@ test('discovery selects fresh discovery roles, evidence review and transcript la
       logPath: `/logs/${role}.jsonl` };
   });
   const result = await delegate({ task: 'Explore X', mode: 'discover' }, undefined, (phase) => phases.push(phase));
-  assert.deepEqual(calls.map((c) => c.role), ['discoverer', 'discovery-reviewer']);
-  assert.match(calls[1].prompt, /Discovery findings.*verify independently/s);
-  assert.match(calls[1].prompt, /src\/a.js:4/);
-  assert.deepEqual(phases, ['Discovering', 'Reviewing']);
+  assert.deepEqual(calls.map((c) => c.role), ['discoverer']);
+  assert.deepEqual(phases, ['Discovering']);
   assert.equal(result.isError, false);
-  assert.equal(result.usage.input, 2);
-  assert.deepEqual(result.details.logs, { discoverer: '/logs/discoverer.jsonl', 'discovery-reviewer': '/logs/discovery-reviewer.jsonl' });
+  assert.equal(result.usage.input, 1);
+  assert.equal(result.details.approved, true);
+  assert.deepEqual(result.details.logs, { discoverer: '/logs/discoverer.jsonl' });
+  assert.doesNotMatch(result.content[0].text, /Review:/);
   assert.match(result.content[0].text, /^Discovery findings:/);
 });
 
-test('discovery approval still requires exact leading PASS, not resolved unknowns', async () => {
-  for (const [verdict, approved] of [
-    ['PASS', true], ['PASS\nEvidence checked; remaining gaps disclosed.', true],
-    ['PASSING', false], ['PASS with caveats', false],
-    ['Evidence checked.\nPASS', false], ['FAIL\nUnsupported claim.', false],
-  ]) {
-    const delegate = createDelegator(async (role) => report(
-      role === 'discoverer' ? 'src/a.js:4 supports X; Y unknown.' : verdict));
+test('discovery does not parse findings as an approval verdict', async () => {
+  for (const findings of ['src/a.js:4 supports X; Y unknown.', 'FAIL\nUnsupported claim found.', 'PASSING']) {
+    const delegate = createDelegator(async () => report(findings));
     const result = await delegate({ task: 'Gather scoped evidence', mode: 'discover' });
-    assert.equal(result.details.approved, approved, verdict);
-    assert.equal(result.isError, !approved, verdict);
+    assert.equal(result.details.approved, true);
+    assert.equal(result.isError, false);
+    assert.match(result.content[0].text, /Discovery findings:/);
   }
+});
+
+test('discovery errors preserve usage and logs; queue recovers', async () => {
+  let fail = true;
+  const delegate = createDelegator(async (role) => {
+    assert.equal(role, 'discoverer');
+    if (fail) {
+      fail = false;
+      throw Object.assign(new Error('Evidence unavailable'), {
+        usage: report('').usage, logPath: '/logs/discoverer.jsonl',
+      });
+    }
+    return report('Evidence checked; gaps disclosed.');
+  });
+  const result = await delegate({ task: 'Gather facts', mode: 'discover' });
+  assert.equal(result.isError, true);
+  assert.equal(result.details.approved, false);
+  assert.equal(result.usage.input, 1);
+  assert.deepEqual(result.details.logs, { discoverer: '/logs/discoverer.jsonl' });
+  assert.equal((await delegate({ task: 'Retry', mode: 'discover' })).isError, false);
+});
+
+test('discovery cancellation preserves completed findings without review', async () => {
+  const controller = new AbortController();
+  const roles = [];
+  const delegate = createDelegator(async (role) => {
+    roles.push(role);
+    controller.abort();
+    return { ...report('Partial evidence.'), logPath: '/logs/discoverer.jsonl' };
+  });
+  const result = await delegate({ task: 'Gather facts', mode: 'discover' }, controller.signal);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Partial evidence/);
+  assert.equal(result.usage.input, 1);
+  assert.deepEqual(result.details.logs, { discoverer: '/logs/discoverer.jsonl' });
+  assert.deepEqual(roles, ['discoverer']);
 });
 
 test('invalid modes launch no agent; queue recovers', async () => {
@@ -140,18 +172,18 @@ test('discovery recursion defaults to discovery and cannot switch to execution',
   await assert.rejects(child({ task: 'Implement', mode: 'execute' }), /cannot delegate execution/);
   assert.deepEqual(roles, []);
   await child({ task: 'Find evidence' });
-  assert.deepEqual(roles, ['discoverer', 'discovery-reviewer']);
+  assert.deepEqual(roles, ['discoverer']);
 });
 
 test('discovery prompts gather facts without execution decomposition or plan instructions', () => {
-  for (const role of ['discoverer', 'discovery-reviewer']) {
+  for (const role of ['discoverer']) {
     const prompt = rolePrompts[role];
     assert.match(prompt, /Main retains all decisions/);
     assert.match(prompt, /Do not implement, modify files, write artifacts, propose/);
     assert.match(prompt, /unknowns\/gaps/);
     assert.doesNotMatch(prompt, /Identify that split first|Complete only the|run appropriate\nchecks/);
   }
-  assert.match(rolePrompts['discovery-reviewer'], /not against a proposed plan/);
+  assert.equal(rolePrompts['discovery-reviewer'], undefined);
   assert.match(supervisorPrompt, /discovery needs no predefined split/);
 });
 
@@ -178,7 +210,7 @@ test('supervisor and execution worker offload substantial discovery without exec
 });
 
 test('discovery roles aggressively narrow broad exploration and stop at bounded factual leaves', () => {
-  for (const role of ['discoverer', 'discovery-reviewer']) {
+  for (const role of ['discoverer']) {
     const prompt = normalized(rolePrompts[role]);
     assert.match(prompt, /Do only lightweight orientation locally/);
     assert.match(prompt, /Aggressively delegate broad, multi-area, or large-output/);
@@ -194,7 +226,7 @@ test('discovery roles aggressively narrow broad exploration and stop at bounded 
 });
 
 test('discovery reports preserve evidence and gaps with a soft target and focused follow-ups', () => {
-  for (const role of ['discoverer', 'discovery-reviewer']) {
+  for (const role of ['discoverer']) {
     const prompt = normalized(rolePrompts[role]);
     assert.match(prompt, /decision-relevant, evidence-linked/);
     assert.match(prompt, /explicit.*gaps/);
@@ -208,15 +240,14 @@ test('discovery reports preserve evidence and gaps with a soft target and focuse
   assert.match(normalized(rolePrompts.discoverer), /Distinguish verified facts from inference; state coverage and limitations/);
 });
 
-test('discovery reviewer independently checks claims without duplicating every child scope', () => {
-  const prompt = normalized(rolePrompts['discovery-reviewer']);
-  assert.match(prompt, /Treat findings as claims, not proof/);
-  assert.match(prompt, /large-output evidence verification into narrower factual scopes/);
-  assert.match(prompt, /Independently verify decision-relevant claims and evidence, including child findings/);
-  assert.match(prompt, /do not approve solely on child approval or re-explore every child scope/);
+test('discovery verifies evidence itself without duplicating every child scope', () => {
+  const prompt = normalized(rolePrompts.discoverer);
+  assert.match(prompt, /Treat child findings as claims, not proof/);
+  assert.match(prompt, /exploration and evidence verification into narrower factual scopes/);
+  assert.match(prompt, /Verify decision-relevant claims against relevant codebase or external evidence within discovery itself/);
+  assert.match(prompt, /without re-exploring every child scope/);
   assert.match(prompt, /targeted checks for contradictions and unsupported claims/);
-  assert.match(prompt, /Begin the final report with exactly PASS or FAIL on its own line/);
-  assert.match(prompt, /PASS means the findings are adequately supported and scoped with limitations honestly disclosed, not that all unknowns are resolved\. Otherwise use FAIL/);
+  assert.match(prompt, /Report checks actually performed; no separate reviewer or PASS\/FAIL verdict is required/);
 });
 
 test('delegate tool description advertises context-preserving discovery contracts', () => {
@@ -225,6 +256,7 @@ test('delegate tool description advertises context-preserving discovery contract
   const description = source.match(/description: '(Execute a small task[^']*)'/)?.[1];
   assert.ok(description, 'delegate_task description exists');
   assert.match(description, /offload substantial fact gathering with mode discover/);
+  assert.match(description, /Execution receives independent review; discovery verifies its own evidence without a separate review stage/);
   assert.match(description, /lightweight orientation; aggressively delegate broad, multi-area, or large-output exploration and evidence verification into strictly narrower factual scopes/);
   assert.match(description, /Never forward the whole assignment or split artificially/);
   assert.match(description, /focused leaves use bounded searches and targeted reads directly/);

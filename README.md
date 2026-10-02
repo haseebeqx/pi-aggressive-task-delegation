@@ -60,15 +60,17 @@ approach and execution:
 }
 ```
 
-Discovery uses a fresh discovery agent and a fresh independent discovery reviewer.
+Discovery uses a fresh discovery agent that verifies evidence as part of discovery,
+without a separate reviewer.
 It gathers comprehensive information within the requested scope and returns compact
 findings linked to files/symbols/lines or external URLs/passages, plus coverage,
 unknowns and gaps. It does not implement, impose a plan, or prescribe a task split.
-The reviewer checks scope, coverage and evidence—not a proposed plan. `PASS` means
-adequately supported findings with honest limitations, not that every unknown is
-resolved. Failed reviews require Main's decision about further investigation.
+The discovery agent checks scope, coverage and evidence, including targeted checks
+of child findings, and reports verification actually performed. No `PASS`/`FAIL`
+verdict is required; disclosed unknowns do not make discovery fail. Main decides
+whether gaps require further investigation.
 Supervisors and workers offload substantial fact gathering instead of filling their
-own context with broad exploration. Discovery agents and reviewers do lightweight
+own context with broad exploration. Discovery agents do lightweight
 orientation, then aggressively delegate broad, multi-area, or large-output searches
 and evidence checks into strictly narrower factual scopes. Focused leaves use bounded
 searches and targeted reads directly; recursion must not forward the same assignment
@@ -81,7 +83,7 @@ These are prompt-level instructions, not enforced context limits or delegation q
 Reports need no new artifacts: existing transcript paths preserve detailed evidence.
 Sequential runs, cancellation, usage accounting and the live UI work as in execution.
 
-**Read-only policy is not a sandbox.** Discovery agents and their reviewers are
+**Read-only policy is not a sandbox.** Discovery agents are
 instructed not to mutate files or external state. Direct inherited tools named
 `write`, `edit`, and `apply_patch` are blocked before forwarding. Shell remains
 available for exploration (`ls`, `rg`, `find`, etc.); arbitrary shell commands and
@@ -154,7 +156,7 @@ runs still return the usual concise reports, usage, and log paths.
   counted by Pi in the supervisor rather than again in child reports/footer.
 - Task decomposition and report brevity are model instructions, not enforced
   limits. There is no hard recursion, budget, or retry limit.
-- Worker, reviewer, discovery and discovery-reviewer transcripts persist under
+- Worker, reviewer and discovery transcripts persist under
   `<Pi agent directory>/delegation-logs/` (normally `~/.pi/agent/`). Tool results
   include their paths in text and `details.logs` for on-demand inspection.
 - Logs may contain sensitive assignments, instructions, messages, and tool
