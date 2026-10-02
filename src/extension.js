@@ -1,6 +1,9 @@
 import {
   AssistantMessageComponent, ToolExecutionComponent, FooterComponent,
   createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager,
+  createBashToolDefinition, createEditToolDefinition, createFindToolDefinition,
+  createGrepToolDefinition, createLsToolDefinition, createPowerShellToolDefinition,
+  createReadToolDefinition, createWriteToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Text } from '@earendil-works/pi-tui';
@@ -45,7 +48,18 @@ export default function taskDivider(pi) {
   let terminalUI;
   let lastPaint = 0;
   const footer = new DelegationFooter(FooterComponent, (error) => disableUI(error));
-  const components = { AssistantMessageComponent, ToolExecutionComponent, Text };
+  // Use public definitions only for presentation. Execution still goes through
+  // the supervisor's executeTool bridge (including validation/permission hooks).
+  const rendererFactories = new Map([
+    ['read', createReadToolDefinition], ['edit', createEditToolDefinition],
+    ['write', createWriteToolDefinition], ['bash', createBashToolDefinition],
+    ['powershell', createPowerShellToolDefinition], ['grep', createGrepToolDefinition],
+    ['find', createFindToolDefinition], ['ls', createLsToolDefinition],
+  ]);
+  const components = {
+    AssistantMessageComponent, ToolExecutionComponent, Text,
+    resolveToolDefinition: (name, cwd) => rendererFactories.get(name)?.(cwd),
+  };
   const transcript = new DelegationTranscript((type, data) => pi.appendEntry(type, data), randomUUID);
   pi.registerEntryRenderer(OUTPUT_ENTRY, (entry, _options, theme) =>
     createTranscriptComponent(() => transcript.records.get(entry.data.id) ?? entry.data,

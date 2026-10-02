@@ -102,7 +102,10 @@ caches/artifacts during discovery. Pi still persists its ordinary transcript log
 
 In interactive Pi, a live panel identifies the focused worker/reviewer and its
 parent chain. Assistant responses use Pi's normal Markdown, code highlighting,
-and thinking formatting; tool calls and output use Pi's native tool panels.
+and thinking formatting. Built-in tool calls and output use Pi's native renderers,
+including syntax-highlighted reads/writes and colored edit diffs. Other inherited
+tools use Pi's generic tool panel: the public tool bridge does not expose their
+custom renderers.
 An orange **Delegated task** indicator appears below the input area while a
 worker or reviewer is focused. The panel does not show token or cost stats.
 Pi's native footer temporarily shows the focused worker/reviewer's token counts,

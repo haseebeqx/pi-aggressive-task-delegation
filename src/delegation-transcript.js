@@ -33,7 +33,7 @@ export class DelegationTranscript {
   }
 }
 
-export function createTranscriptComponent(getRecord, { AssistantMessageComponent, ToolExecutionComponent, Text }, tui, theme) {
+export function createTranscriptComponent(getRecord, { AssistantMessageComponent, ToolExecutionComponent, Text, resolveToolDefinition }, tui, theme) {
   let assistant;
   let tool;
   let previousMessage;
@@ -53,23 +53,26 @@ export function createTranscriptComponent(getRecord, { AssistantMessageComponent
         }
         return [...header.render(width), ...assistant.render(width)];
       }
-      if (previousTool !== record.tool) {
-        const data = record.tool;
+      const data = record.tool;
+      if (!tool || previousTool?.id !== data.id || previousTool?.name !== data.name) {
         tool = new ToolExecutionComponent(data.name, data.id, data.args,
-          { showImages: false }, undefined, tui, record.cwd);
+          { showImages: false }, resolveToolDefinition?.(data.name, record.cwd), tui, record.cwd);
         tool.markExecutionStarted();
         tool.setArgsComplete();
         tool.setExpanded(true);
-        if (data.result) tool.updateResult(data.result, data.partial);
-        previousTool = data;
+      } else if (previousTool !== data) {
+        tool.updateArgs(data.args);
       }
+      if (previousTool !== data && data.result) tool.updateResult(data.result, data.partial);
+      previousTool = data;
       return [...header.render(width), ...tool.render(width)];
     },
     invalidate() {
       assistant?.invalidate();
       tool?.invalidate();
       previousMessage = undefined;
-      previousTool = undefined;
+      // Keep the tool instance and renderer state across theme/resize changes.
+      // invalidate() above makes it rebuild its styled output.
     },
   };
 }
