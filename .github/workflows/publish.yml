@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Stage npm release
 
 on:
   release:
@@ -24,6 +24,6 @@ jobs:
           package-manager-cache: false
       - name: Update npm for trusted publishing
         run: npm install --global npm@latest
-      # npm publish runs prepack, which checks syntax and runs the tests.
-      - name: Publish package
-        run: npm publish --access public
+      # Staging runs prepack checks and tests; a maintainer approves on npm with 2FA.
+      - name: Stage package for approval
+        run: npm stage publish --access public
