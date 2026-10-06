@@ -1,7 +1,7 @@
 {
   "name": "@haseebeqx/pi-aggressive-task-delegation",
   "version": "1.2.0",
-  "description": "Sequential recursive delegation with isolated worker and reviewer contexts for Pi.",
+  "description": "CLI Markdown task lists with isolated worker and reviewer contexts for Pi.",
   "license": "MIT",
   "author": "haseebeqx",
   "repository": {
@@ -38,9 +38,9 @@
     "typebox": "*"
   },
   "scripts": {
-    "check": "node --check src/delegate-list.js && node --check src/delegation-footer.js && node --check src/delegation-view.js && node --check src/delegation-renderer.js && node --check src/delegation-transcript.js && node --check src/extension.js && node --check src/workflow.js && node --check src/log-storage.js && node --check src/inherited-tools.js",
+    "check": "node --check src/delegate-list.js && node --check src/delegation-footer.js && node --check src/delegation-view.js && node --check src/delegation-renderer.js && node --check src/delegation-transcript.js && node --check src/extension.js && node --check src/standalone-runner.js && node --check src/workflow.js && node --check src/log-storage.js && node --check src/inherited-tools.js",
     "test": "node --test test/*.test.js",
-    "test:smoke": "pi --offline --no-extensions -e ./test/smoke-extension.js --no-session --mode json -p /divider-smoke",
+    "test:smoke": "pi --offline --no-extensions -e ./test/smoke-extension.js --no-session --mode json --delegate-list smoke.md",
     "prepack": "npm run check && npm test"
   }
 }

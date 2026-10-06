@@ -42,6 +42,7 @@ test('npm tarball contains only runtime sources, metadata, README, and license',
     'src/extension.js',
     'src/inherited-tools.js',
     'src/log-storage.js',
+    'src/standalone-runner.js',
     'src/workflow.js',
   ]);
 });
