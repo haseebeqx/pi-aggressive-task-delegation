@@ -1,6 +1,6 @@
 {
   "name": "@haseebeqx/pi-aggressive-task-delegation",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "CLI Markdown task lists with isolated worker and reviewer contexts for Pi.",
   "license": "MIT",
   "author": "haseebeqx",
