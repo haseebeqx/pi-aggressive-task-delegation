@@ -24,7 +24,10 @@ test('npm tarball contains only runtime sources, metadata, README, and license',
   const output = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm',
     ['pack', '--dry-run', '--json', '--ignore-scripts'],
     { cwd: root, encoding: 'utf8', timeout: 30_000 });
-  const archive = JSON.parse(output)[manifest.name];
+  const result = JSON.parse(output);
+  const archive = Array.isArray(result)
+    ? result.find(({ name }) => name === manifest.name)
+    : result[manifest.name];
   assert.equal(archive.name, manifest.name);
   assert.equal(archive.version, manifest.version);
   assert.deepEqual(archive.files.map(({ path }) => path).sort(), [

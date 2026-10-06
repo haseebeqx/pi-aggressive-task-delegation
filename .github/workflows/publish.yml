@@ -24,6 +24,8 @@ jobs:
           package-manager-cache: false
       - name: Update npm for trusted publishing
         run: npm install --global npm@latest
+      - name: Install dependencies
+        run: npm ci
       # Staging runs prepack checks and tests; a maintainer approves on npm with 2FA.
       - name: Stage package for approval
         run: npm stage publish --access public
