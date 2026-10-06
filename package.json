@@ -38,7 +38,7 @@
     "typebox": "*"
   },
   "scripts": {
-    "check": "node --check src/delegate-list.js && node --check src/delegation-footer.js && node --check src/delegation-view.js && node --check src/delegation-renderer.js && node --check src/delegation-transcript.js && node --check src/extension.js && node --check src/standalone-runner.js && node --check src/workflow.js && node --check src/log-storage.js && node --check src/inherited-tools.js",
+    "check": "node --check src/native-list.js && node --check src/delegate-tasks.js && node --check src/delegate-list.js && node --check src/delegation-footer.js && node --check src/delegation-view.js && node --check src/delegation-renderer.js && node --check src/delegation-transcript.js && node --check src/extension.js && node --check src/standalone-runner.js && node --check src/workflow.js && node --check src/log-storage.js && node --check src/inherited-tools.js",
     "test": "node --test test/*.test.js",
     "test:smoke": "pi --offline --no-extensions -e ./test/smoke-extension.js --no-session --mode json --delegate-list smoke.md",
     "prepack": "npm run check && npm test"

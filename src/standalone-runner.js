@@ -1,3 +1,4 @@
+import { registerDelegateTasks } from './delegate-tasks.js';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { allocateLogDirectory, seedPrivateSession } from './log-storage.js';
@@ -21,7 +22,7 @@ export const launcherExtensionPath = fileURLToPath(new URL('./extension.js', imp
  */
 export function createStandaloneExecutor({ cwd = process.cwd(), model, modelRuntime,
   thinkingLevel, signal: lifetimeSignal, onProgress, onOutput, agentDir,
-  sdk: injectedSdk } = {}) {
+  sdk: injectedSdk, discoveryOnly = false } = {}) {
   const parent = randomUUID();
   const sdkPromise = injectedSdk ? Promise.resolve(injectedSdk) : import('@earendil-works/pi-coding-agent');
   const runAgent = async (role, assignment, signal) => {
@@ -44,6 +45,11 @@ export function createStandaloneExecutor({ cwd = process.cwd(), model, modelRunt
     const loader = new sdk.DefaultResourceLoader({ cwd, agentDir: directory, settingsManager,
       appendSystemPromptOverride: (base) => [...base, rolePrompts[role]],
       extensionFactories: [
+        { name: 'aggressive-task-delegation', factory: (pi) => registerDelegateTasks(pi, {
+          discoveryOnly: role === 'discoverer',
+          createExecutor: (options) => createStandaloneExecutor({ ...options,
+            agentDir: directory, modelRuntime, sdk, onOutput }),
+        }) },
         { name: 'codemode', builtin: true, replaceable: true, factory: sdk.createCodemodeExtension() },
         { name: 'tool-search', builtin: true, replaceable: true, factory: sdk.createToolSearchExtension() },
         { name: 'mcp', builtin: true, replaceable: true, factory: sdk.createMcpExtension() },
@@ -96,10 +102,10 @@ export function createStandaloneExecutor({ cwd = process.cwd(), model, modelRunt
       } finally { session?.dispose(); }
     }
   };
-  const delegate = createDelegator(runAgent);
-  return { execute(params, signal) {
+  const delegate = createDelegator(runAgent, { discoveryOnly });
+  return { execute(params, signal, progress = onProgress) {
     try { onOutput?.({ task: params.task, reset: true }); } catch { /* Display only. */ }
     const signals = [lifetimeSignal, signal].filter(Boolean);
-    return delegate(params, signals.length ? AbortSignal.any(signals) : undefined, onProgress);
+    return delegate(params, signals.length ? AbortSignal.any(signals) : undefined, progress);
   } };
 }

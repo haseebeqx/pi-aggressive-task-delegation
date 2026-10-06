@@ -80,10 +80,11 @@ test('empty tasks are rejected without launching agents', async () => {
   await assert.rejects(delegate({ task: '  ' }), /non-empty/);
 });
 
-test('only self-contained worker and independent reviewer prompts are exposed', () => {
-  assert.deepEqual(Object.keys(rolePrompts), ['worker', 'reviewer']);
-  assert.match(rolePrompts.worker, /Execute this self-contained assignment directly/);
-  assert.doesNotMatch(rolePrompts.worker, /delegate_task|mode discover|recursive/);
+test('workers use the delegation supervisor workflow and reviewers remain independent', () => {
+  assert.deepEqual(Object.keys(rolePrompts), ['worker', 'reviewer', 'discoverer']);
+  assert.match(rolePrompts.worker, /context-preserving supervisor/);
+  assert.match(rolePrompts.worker, /delegate_task/);
+  assert.match(rolePrompts.discoverer, /never delegate execution/);
   assert.match(rolePrompts.worker, /Verify your work/);
   assert.match(rolePrompts.reviewer, /Do not modify files or implement fixes/);
 });

@@ -67,6 +67,12 @@ test('independent sessions, prompts, credentials, private logs, usage and review
   assert.notEqual(f.options[0].sessionManager, f.options[1].sessionManager);
   for (const [i, role] of ['worker', 'reviewer'].entries()) {
     assert.equal(f.loaders[i].options.appendSystemPromptOverride([])[0], rolePrompts[role]);
+    const delegation = f.loaders[i].options.extensionFactories.find((ext) => ext.name === 'aggressive-task-delegation');
+    const commands = [], tools = [];
+    delegation.factory({ on() {}, registerCommand: (name) => commands.push(name),
+      registerTool: (tool) => tools.push(tool.name) });
+    assert.deepEqual(commands, ['delegate-tasks']);
+    assert.deepEqual(tools, ['delegate_task']);
     assert.equal(f.options[i].modelRuntime, runtime);
     assert.equal(f.sessions[i].agent.streamFunction, undefined);
     assert.equal(f.options[i].tools, undefined);

@@ -1,6 +1,6 @@
 # Pi aggressive task delegation
 
-CLI-only sequential Markdown task execution with fresh worker sessions and independent review. Requires Node.js 22+ and Pi (tested with `0.99.2`).
+Interactive task delegation and sequential Markdown task execution with fresh worker sessions and independent review. Requires Node.js 22+ and Pi (native session API verified with `1.0.4`).
 
 ## Install and run
 
@@ -15,14 +15,26 @@ pi -e npm:@haseebeqx/pi-aggressive-task-delegation --delegate-list tmp/tasks.md
 ```
 
 The flag is a literal path, not an `@file` reference. It runs once on actual startup,
-never on reload or session switching. Without the flag this extension does nothing.
-There are no public delegation tools or slash commands and no supervisor prompt or
-Main model turn. Do not supply a prompt, file reference, or piped input alongside
+never on reload or session switching. The interactive `/delegate-tasks <task>`
+command and `delegate_task` tool are available with or without the flag.
+The command keeps Main as a context-preserving supervisor, delegating smaller
+execution tasks sequentially with independent review and scoped read-only discovery.
+In interactive mode, each item starts a fresh regular Pi session in the current
+window. Chat, streaming, tools, permissions, and input use Pi's normal UI; only
+`Currently running #n` is added to the footer. Each item starts through
+the same supervisor prompt workflow as `/delegate-tasks`, without carrying over the previous conversation.
+Startup dispatches an internal command because Pi only exposes session replacement
+to command contexts, not startup lifecycle handlers. Do not supply additional startup
+prompts alongside the flag. Session-switch vetoes stop the list.
+An item is checked off when its normal agent run settles without an error or abort;
+interactive lists do not impose a separate whole-item reviewer gate.
+Non-interactive lists retain fresh workers and independent whole-item review.
+In non-interactive mode the flag does not start a Main model turn. Do not supply a prompt, file reference, or piped input alongside
 the flag: Pi can process those separately after startup.
 
-Each item is executed and independently reviewed before its checkbox is saved and
-the next starts. Workers may recursively delegate smaller tasks with fresh sessions;
-discovery is available internally, not as a launcher tool. Items receive only their
+Each item finishes (and, in non-interactive mode, passes independent review)
+before its checkbox is saved and the next starts. Workers may recursively delegate smaller tasks with fresh sessions;
+scoped discovery is available through `delegate_task` with `mode: "discover"`. Items receive only their
 own assignment and source path, not prior reports or Main history.
 
 ## Task files
@@ -37,8 +49,8 @@ absolute path. Tasks are independent/unrelated; each must be self-contained on o
 
 Bullets (`-`, `+`, `*`) and numbered items are supported; checked items and fenced
 code examples are skipped. Continuation lines/headings are not task context.
-Empty unchecked items are rejected before work starts. After a successful review,
-the runner waits for reviewed success and checkbox persistence before starting
+Empty unchecked items are rejected before work starts. After successful completion,
+the runner waits for checkbox persistence before starting
 the next item. Only that checkbox's space changes to `x`; formatting and line endings remain
 unchanged. Failure, cancellation, or file conflicts stop the list with remaining
 items unchecked. There are no automatic retries or rollback of worker edits.
@@ -59,8 +71,9 @@ lost. Avoid concurrent writes during that brief update window.
 
 ## Progress, cancellation, and exit
 
-TUI shows phase notifications and a status containing the final outcome; it stays
-open afterward. Ctrl+C or Ctrl+Esc during execution cancels the list. Non-TUI
+TUI uses a fresh normal session for each item and shows `Currently running #n`
+at the bottom. The status clears on completion or failure; Pi stays open on the
+last item's session, with a final notification. Ctrl+C or Ctrl+Esc during execution cancels the list. Non-TUI
 progress and final counts/errors go to stderr (JSON/RPC stdout stays protocol-only).
 SIGINT and session shutdown abort active work; cancellation does not undo edits.
 Print/JSON startup awaits completion and then Pi exits naturally. RPC requests
@@ -73,6 +86,9 @@ rely on their exit code for automation. Use print mode instead.
 
 - Agents share the working directory and OS permissions. No sandbox, rollback,
   branch isolation, or security-enforced read-only reviewer/discovery boundary.
+The following child-session details apply to non-interactive list execution and
+`delegate_task`. Interactive list items use the host's normal session resources.
+
 - Selected model and thinking level are passed to each independent session.
   Credentials use normal SDK auth storage/environment; Main registry/runtime
   credentials and request-only `--api-key` overrides are not forwarded.

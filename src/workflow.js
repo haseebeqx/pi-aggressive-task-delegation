@@ -1,8 +1,19 @@
+export const supervisorPrompt = `Act as a context-preserving supervisor. Retain decisions about goals,
+approach and task breakdown. Discovery is optional: use bounded local reads for
+small, well-understood tasks; delegate substantial fact gathering with mode discover
+in narrower factual scopes. Discovery returns verified evidence and gaps, not a plan.
+For execution, identify at least two useful subtasks strictly smaller than the
+assignment, then aggressively delegate those pieces sequentially with delegate_task.
+If no useful split exists, execute directly. Never forward the whole task unchanged
+or split artificially. Pass only relevant paths, requirements, decisions and concise
+prior results, never transcripts. Execution receives independent review; on failure
+request a focused correction before proceeding. Do not claim success with unresolved
+failures. Inspect transcript logs only when needed. Finish with a brief integrated outcome.`;
+
 export const workerPrompt = `You are a worker with a fresh context. Complete only the
 assigned task in the shared working directory. Follow project instructions.
-Execute this self-contained assignment directly with the available tools.
-Do not delegate work or rely on unavailable delegation tools. Inspect the relevant
-files, implement the requested changes, and keep your work within the assigned scope.
+${supervisorPrompt}
+Inspect relevant files, implement requested changes and stay within the assigned scope.
 Verify your work. Return a concise report (aim for under 200 words) with:
 Outcome; Files changed or relevant artifacts; Verification actually performed;
 Unresolved issues. Include paths and facts needed for independent review.
@@ -17,7 +28,17 @@ Begin your final report with exactly PASS or FAIL on its own line, followed by
 concise findings, checks actually performed, and any limitations (under 200 words).
 PASS means the task's requirements are met; otherwise use FAIL.`;
 
-export const rolePrompts = { worker: workerPrompt, reviewer: reviewerPrompt };
+export const discoveryPrompt = `You are a fresh-context discovery agent. Gather read-only,
+evidence-linked facts for the assigned scope. Do not modify files, implement, or
+propose a plan. Delegate broad exploration sequentially with mode discover into
+strictly narrower factual scopes; never delegate execution or forward the whole
+assignment. For focused leaves, use bounded searches and targeted reads directly.
+Verify child claims with targeted checks without repeating their exploration.
+Return compact findings, relevant paths/line references or source URLs, checks
+actually performed, explicit gaps and limitations. Do not return raw logs.`;
+
+export const rolePrompts = { worker: workerPrompt, reviewer: reviewerPrompt,
+  discoverer: discoveryPrompt };
 
 export function emptyUsage() {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
@@ -34,13 +55,17 @@ export function addUsage(total, usage) {
 }
 
 // Serialize complete worker/reviewer runs, including recovery after failures.
-export function createDelegator(runAgent) {
+export function createDelegator(runAgent, { discoveryOnly = false } = {}) {
   let tail = Promise.resolve();
   return (request, signal, onProgress) => {
     const result = tail.then(async () => {
       signal?.throwIfAborted();
       const task = request.task?.trim();
       if (!task) throw new Error('A non-empty task is required.');
+      const mode = request.mode ?? (discoveryOnly ? 'discover' : 'execute');
+      if (!['execute', 'discover'].includes(mode)) throw new Error('mode must be execute or discover.');
+      if (discoveryOnly && mode !== 'discover') throw new Error('Discovery cannot delegate execution.');
+      const workerRole = mode === 'discover' ? 'discoverer' : 'worker';
       const context = request.context?.trim() || '(none supplied)';
       const assignment = `Assigned task:\n${task}\n\nRelevant context:\n${context}`;
       const usage = emptyUsage();
@@ -52,11 +77,15 @@ export function createDelegator(runAgent) {
       const details = (approved) => ({ approved,
         ...(Object.keys(logs).length ? { logs: { ...logs } } : {}) });
       try {
-        onProgress?.('Working');
-        worker = await runAgent('worker', assignment, signal, request.ctx);
+        onProgress?.(mode === 'discover' ? 'Discovering' : 'Working');
+        worker = await runAgent(workerRole, assignment, signal, request.ctx);
         addUsage(usage, worker.usage);
-        if (worker.logPath) logs.worker = worker.logPath;
+        if (worker.logPath) logs[workerRole] = worker.logPath;
         signal?.throwIfAborted();
+        if (mode === 'discover') return {
+          content: [{ type: 'text', text: `Discovery findings:\n${worker.report}${logText()}` }],
+          details: details(true), usage, isError: false,
+        };
         onProgress?.('Reviewing');
         review = await runAgent('reviewer', `${assignment}\n\nWorker report (verify independently):\n${worker.report}`, signal, request.ctx);
         addUsage(usage, review.usage);
@@ -69,7 +98,7 @@ export function createDelegator(runAgent) {
         };
       } catch (error) {
         addUsage(usage, error.usage);
-        if (error.logPath) logs[worker ? 'reviewer' : 'worker'] = error.logPath;
+        if (error.logPath) logs[worker && mode !== 'discover' ? 'reviewer' : workerRole] = error.logPath;
         return {
           content: [{ type: 'text', text: `Delegation failed: ${error.message}${worker ? `\n\nCompleted worker report:\n${worker.report}` : ''}${logText()}` }],
           details: details(false), usage, isError: true,
