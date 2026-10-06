@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerDelegateList, uncheckedTasks } from '../src/delegate-list.js';
@@ -12,9 +12,11 @@ function setup(t, text, execute) {
   const path = join(cwd, 'todo file.md');
   writeFileSync(path, text);
   let handler, tool;
+  const events = {};
+  let completion;
   const calls = [], notices = [];
   const ctx = { cwd, waitForIdle: async () => {}, ui: { notify: (...args) => notices.push(args) } };
-  registerDelegateList({ registerTool: definition => { tool = definition; assert.equal(tool.name, 'delegate_list'); }, registerCommand: (name, command) => { assert.equal(name, 'delegate-list'); handler = command.handler; } }, (_ctx, getParent) => {
+  registerDelegateList({ on: (event, handler) => { events[event] = handler; }, registerTool: definition => { tool = definition; assert.equal(tool.name, 'delegate_list'); }, registerCommand: (name, command) => { assert.equal(name, 'delegate-list'); handler = command.handler; completion = command.getArgumentCompletions; } }, (_ctx, getParent) => {
     assert.equal(getParent().procedural, true);
     return { execute: async (id, params, signal, update, context) => {
       assert.equal(context, ctx);
@@ -22,7 +24,8 @@ function setup(t, text, execute) {
       return execute?.(calls.length, path, signal) ?? pass;
     } };
   });
-  return { toolRun: (signal) => tool.execute('list', { path }, signal, undefined, ctx), tool: () => tool, run: (args = '"todo file.md"') => handler(args, ctx), path, ctx, calls, notices };
+  events.session_start({}, ctx);
+  return { complete: prefix => completion(prefix), start: cwd => events.session_start({}, { cwd }), toolRun: (signal) => tool.execute('list', { path }, signal, undefined, ctx), tool: () => tool, run: (args = '"todo file.md"') => handler(args, ctx), path, ctx, calls, notices };
 }
 
 test('sequential direct execution preserves all text and skips checked/fenced items', async t => {
@@ -183,4 +186,39 @@ test('completion does not wait for later additions; a new run processes them', a
   assert.equal(s.calls.length, 1);
   assert.equal((await s.toolRun()).details.completed, 1);
   assert.deepEqual(s.calls.map(c => c.task), ['first', 'later']);
+});
+
+test('command completion filters files, navigates paths and follows session cwd', t => {
+  const s = setup(t, '');
+  const cwd = s.ctx.cwd;
+  mkdirSync(join(cwd, 'task folder'));
+  writeFileSync(join(cwd, 'task folder', 'next.markdown'), '');
+  writeFileSync(join(cwd, 'notes.MD'), '');
+  writeFileSync(join(cwd, 'ignore.txt'), '');
+  const values = prefix => s.complete(prefix)?.map(item => item.value);
+  assert.deepEqual(values(''), ['notes.MD', '"task folder/"', '"todo file.md"']);
+  assert.deepEqual(values('"task folder/n'), ['"task folder/next.markdown"']);
+  assert.deepEqual(values("'task folder/n"), ["'task folder/next.markdown'"]);
+  assert.deepEqual(values('./notes'), ['./notes.MD']);
+  assert.deepEqual(values(join(cwd, 'notes')), [join(cwd, 'notes.MD')]);
+  assert.deepEqual(values('@"todo'), ['@"todo file.md"']);
+  assert.equal(s.complete('missing/'), null);
+  assert.equal(s.complete('ignore'), null);
+  s.start(join(cwd, 'task folder'));
+  assert.deepEqual(values(''), ['next.markdown']);
+  assert.deepEqual(values('../notes'), ['../notes.MD']);
+});
+
+for (const args of ['@"todo file.md"', "@'todo file.md'"]) test(`command accepts built-in reference ${args}`, async t => {
+  const s = setup(t, '- [ ] task\n');
+  await s.run(args);
+  assert.equal(s.calls.length, 1);
+  assert.equal(readFileSync(s.path, 'utf8'), '- [x] task\n');
+});
+
+test('command accepts unquoted @path', async t => {
+  const s = setup(t, '');
+  writeFileSync(join(s.ctx.cwd, 'tasks.md'), '- [ ] task\n');
+  await s.run('@tasks.md');
+  assert.equal(s.calls.length, 1);
 });

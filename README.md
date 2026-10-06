@@ -52,6 +52,11 @@ The agent can also call `delegate_task` directly:
 /delegate-list "path with spaces/tasks.md"
 ```
 
+Tab completion for `/delegate-list` suggests directories and `.md`/`.markdown`
+files relative to the current session working directory (or an absolute prefix).
+Paths containing spaces are quoted. Built-in `@path` and `@"path with spaces"`
+file references are also accepted.
+
 The agent can invoke the same runner with `delegate_list({ "path": "tasks.md" })`.
 The path is required. The tool returns a compact completion/error outcome and
 accepts cancellation from its calling turn; it never waits for Main to become idle.

@@ -1,8 +1,54 @@
 import { Type } from 'typebox';
 import { emptyUsage, addUsage } from './workflow.js';
-import { readFileSync, writeFileSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
+
+// The command takes one whole path, not shell-style multiple arguments.
+function commandPath(args) {
+  let name = args.trim();
+  if (name.startsWith('@')) name = name.slice(1);
+  if ((name.startsWith('"') && name.endsWith('"')) || (name.startsWith("'") && name.endsWith("'"))) name = name.slice(1, -1);
+  return name;
+}
+
+function pathCompletions(prefix, cwd) {
+  if (!cwd) return null;
+  let name = prefix.trimStart();
+  const at = name.startsWith('@') ? '@' : '';
+  if (at) name = name.slice(1);
+  const quote = /^["']/.test(name) ? name[0] : '';
+  if (quote) {
+    name = name.slice(1);
+    if (name.endsWith(quote)) name = name.slice(0, -1);
+  }
+  const split = name.lastIndexOf(sep) + 1;
+  const directory = name.slice(0, split);
+  const partial = name.slice(split);
+  try {
+    const items = readdirSync(resolve(cwd, directory || '.'), { withFileTypes: true })
+      .filter(entry => entry.name.startsWith(partial))
+      .flatMap(entry => {
+        let isDirectory = entry.isDirectory();
+        let isFile = entry.isFile();
+        if (entry.isSymbolicLink()) {
+          try {
+            const stat = statSync(resolve(cwd, directory, entry.name));
+            isDirectory = stat.isDirectory();
+            isFile = stat.isFile();
+          } catch { return []; }
+        }
+        if (!isDirectory && !(isFile && /\.(md|markdown)$/i.test(entry.name))) return [];
+        const path = directory + entry.name + (isDirectory ? sep : '');
+        // Choose a quote absent from the path; no shell escaping is involved.
+        const q = quote && !path.includes(quote) ? quote : /\s/.test(path) ? (path.includes('"') ? "'" : '"') : '';
+        if (q && path.includes(q)) return [];
+        return [{ value: at + q + path + q, label: path }];
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return items.length ? items : null;
+  } catch { return null; }
+}
 
 // Intentionally line-based: each checkbox is one self-contained assignment.
 export function uncheckedTasks(text) {
@@ -29,6 +75,9 @@ export function uncheckedTasks(text) {
 
 export function registerDelegateList(pi, makeTool) {
   let running = false;
+  let completionCwd;
+  // session_start also fires on session replacement and reload. Retain only cwd.
+  pi.on('session_start', (_event, ctx) => { completionCwd = ctx.cwd; });
   const outcome = (completed, error, usage) => ({
     content: [{ type: 'text', text: error
       ? `delegate-list stopped after ${completed} item(s): ${error}`
@@ -91,10 +140,11 @@ export function registerDelegateList(pi, makeTool) {
   });
   pi.registerCommand('delegate-list', {
     description: 'Execute unchecked Markdown tasks sequentially and mark reviewed successes.',
+    getArgumentCompletions: prefix => pathCompletions(prefix, completionCwd),
     handler: async (args, ctx) => {
-      let name = args.trim();
+      completionCwd = ctx.cwd;
+      const name = commandPath(args);
       if (!name) { ctx.ui.notify('Usage: /delegate-list <markdown-file>', 'info'); return; }
-      if ((name.startsWith('"') && name.endsWith('"')) || (name.startsWith("'") && name.endsWith("'"))) name = name.slice(1, -1);
       const result = await run(name, ctx, ctx.signal, true);
       ctx.ui.notify(result.content[0].text, result.isError ? 'error' : 'info');
     },
