@@ -12,6 +12,7 @@ import { DelegationView } from './delegation-view.js';
 import { DelegationFooter } from './delegation-footer.js';
 import { DelegationTranscript, OUTPUT_ENTRY, createTranscriptComponent } from './delegation-transcript.js';
 import { existsSync } from 'node:fs';
+import { registerDelegateList } from './delegate-list.js';
 import { randomUUID } from 'node:crypto';
 import { allocateLogDirectory, seedPrivateSession } from './log-storage.js';
 import { inheritTools } from './inherited-tools.js';
@@ -275,6 +276,7 @@ export default function taskDivider(pi) {
   }
 
   pi.registerTool(makeTool());
+  registerDelegateList(pi, makeTool);
   pi.on('input', async (event) => {
     if (event.source === 'extension') return { action: 'continue' };
     if (await view.input(event.text, event.images)) return { action: 'handled' };

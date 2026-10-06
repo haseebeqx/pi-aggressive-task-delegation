@@ -45,6 +45,58 @@ The agent can also call `delegate_task` directly:
 }
 ```
 
+### Procedural todo lists
+
+```text
+/delegate-list tasks.md
+/delegate-list "path with spaces/tasks.md"
+```
+
+The agent can invoke the same runner with `delegate_list({ "path": "tasks.md" })`.
+The path is required. The tool returns a compact completion/error outcome and
+accepts cancellation from its calling turn; it never waits for Main to become idle.
+
+Both entry points directly delegate each unchecked Markdown task in file order—no
+supervisor model turn or automatic task splitting by Main. Each item uses the
+existing fresh worker + independent reviewer workflow (including recursive
+worker delegation). Only the item's text and source path are passed; prior
+reports and parent conversation history are not forwarded.
+
+Use a regular `.md` or `.markdown` file, relative to the working directory or an
+absolute path. Tasks are independent/unrelated; each must be self-contained on one line:
+
+```markdown
+- [ ] Add signup validation in src/signup.js and test malformed addresses
+- [ ] Fix date formatting in src/calendar.js and test timezone handling
+```
+
+Bullets (`-`, `+`, `*`) and numbered items are supported; checked items and fenced
+code examples are skipped. Continuation lines/headings are not task context.
+Empty unchecked items are rejected before work starts. After a successful review,
+the runner waits for reviewed success and checkbox persistence before starting
+the next item. Only that checkbox's space changes to `x`; formatting and line endings remain
+unchanged. Failure, cancellation, or file conflicts stop the list with remaining
+items unchecked. There are no automatic retries or rollback of worker edits.
+Rerun the command to resume unchecked items.
+
+You may append tasks while the runner is active, including while its last item is
+in flight. The file is reread before execution and marking; append-only additions
+are preserved when checking off the current item and discovered sequentially.
+If the file has no final newline, begin the appended content with a newline
+(`LF` or `CRLF`) rather than extending the existing line. Changes to any existing
+text (including checkboxes), truncation, or unsafe line-extending appends cause an
+explicit conflict without overwriting edits; even a successful item remains
+unchecked on conflict. The runner finishes as soon as a fresh read finds no
+unchecked tasks; it does not wait for future additions. Additions after that
+completion cutoff require another run. File updates are not protected by filesystem
+locking: an external write between the runner's read and checkbox write could be
+lost. Avoid concurrent writes during that brief update window. A shared tool/command guard allows only one list run
+to be active. Ctrl+Esc cancels a focused list item without waiting for a replacement
+instruction or sending a message to Main. `/delegate-tasks` remains unchanged.
+Command outcomes are UI notifications, not messages injected into Main's context;
+tool outcomes contain only completion counts or a bounded error, not item summaries;
+child transcripts retain detailed output.
+
 ### Optional discovery
 
 Discovery is not a required phase before execution. For small or well-understood

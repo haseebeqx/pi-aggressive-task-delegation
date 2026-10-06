@@ -81,7 +81,7 @@ export class DelegationView {
   }
 
   async finish(scope) {
-    if (scope.cancelled && !scope.parent.scope?.controller.signal.aborted) {
+    if (scope.cancelled && !scope.parent.procedural && !scope.parent.scope?.controller.signal.aborted) {
       await scope.wait;
     }
     if (scope.parent.waiting === scope) scope.parent.waiting = undefined;

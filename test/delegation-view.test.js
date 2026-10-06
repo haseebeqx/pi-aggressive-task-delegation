@@ -82,3 +82,15 @@ test('normal completion returns focus; shutdown and external abort release waits
   assert.equal(view.focus, undefined);
   assert.equal(await view.input('normal main input'), false);
 });
+
+test('procedural parent cancellation finishes without replacement input', async () => {
+  const view = new DelegationView();
+  const parent = { role: 'main', procedural: true, session: { steer() {} } };
+  const scope = view.open(parent);
+  view.enter(scope, { steer() {} }, 'worker', 'item');
+  assert.equal(view.cancel(), true);
+  await view.finish(scope);
+  assert.equal(scope.controller.signal.aborted, true);
+  assert.equal(view.focus, undefined);
+  assert.equal(parent.waiting, undefined);
+});
