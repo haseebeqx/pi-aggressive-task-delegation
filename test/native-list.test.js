@@ -60,7 +60,7 @@ test('fresh native contexts submit normal supervisor prompts sequentially and pr
   assert.match(f.prompts[0], /Task:\nfirst/);
   assert.doesNotMatch(f.prompts[1], /Task:\nfirst/);
   assert.match(f.prompts[2], /Task:\nappended/);
-  assert.deepEqual(f.statuses, ['Currently running #1', 'Currently running #2', 'Currently running #3', undefined]);
+  assert.deepEqual(f.statuses, ['delegated task #1', 'delegated task #2', 'delegated task #3', undefined]);
   assert.equal(readFileSync(f.path, 'utf8'), '- [x] first\n- [x] second\n- [x] appended\n');
   assert.equal(f.host.listenerCount('SIGINT'), 0);
 });
@@ -72,7 +72,7 @@ test('footer uses checkbox positions including previously completed items', asyn
   const result = await runNativeList(f.path, f.ctx, { host: f.host });
   assert.equal(result.isError, false);
   assert.equal(result.details.completed, 2);
-  assert.deepEqual(f.statuses, ['Currently running #7', 'Currently running #9', undefined]);
+  assert.deepEqual(f.statuses, ['delegated task #7', 'delegated task #9', undefined]);
   assert.equal(readFileSync(f.path, 'utf8'), text.replace('[ ] seven', '[x] seven').replace('[ ] nine', '[x] nine'));
 });
 

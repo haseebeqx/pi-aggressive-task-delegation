@@ -21,7 +21,7 @@ The command keeps Main as a context-preserving supervisor, delegating smaller
 execution tasks sequentially with independent review and scoped read-only discovery.
 In interactive mode, each item starts a fresh regular Pi session in the current
 window. Chat, streaming, tools, permissions, and input use Pi's normal UI; only
-`Currently running #n` is added to the footer. Each item starts through
+`delegated task #n` is added to the footer. Each item starts through
 the same supervisor prompt workflow as `/delegate-tasks`, without carrying over the previous conversation.
 Startup dispatches an internal command because Pi only exposes session replacement
 to command contexts, not startup lifecycle handlers. Do not supply additional startup
@@ -83,7 +83,7 @@ lost. Avoid concurrent writes during that brief update window.
 
 ## Progress, cancellation, and exit
 
-TUI uses a fresh normal session for each item and shows `Currently running #n`
+TUI uses a fresh normal session for each item and shows `delegated task #n`
 at the bottom. The status clears on completion or failure; Pi stays open on the
 last item's session, with a final notification. Ctrl+C or Ctrl+Esc during execution cancels the list. Non-TUI
 progress and final counts/errors go to stderr (JSON/RPC stdout stays protocol-only).

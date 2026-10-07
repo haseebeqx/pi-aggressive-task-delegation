@@ -35,7 +35,7 @@ export async function runNativeList(path, ctx, { runList = runDelegateList, host
           replacement = await current.newSession({ withSession: async (fresh) => {
             current = fresh;
             controller.signal.throwIfAborted();
-            fresh.ui.setStatus('delegate-list', `Currently running #${params.taskNumber}`);
+            fresh.ui.setStatus('delegate-list', `delegated task #${params.taskNumber}`);
             removeInput = fresh.ui.onTerminalInput(data => {
               if (matchesKey(data, 'ctrl+c') || parseKey(data) === 'ctrl+escape') {
                 cancel();
