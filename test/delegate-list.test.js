@@ -33,6 +33,7 @@ test('sequential direct execution preserves all text and skips checked/fenced it
   });
   await s.run();
   assert.deepEqual(s.calls.map(c => [c.task, c.mode]), [['first', 'execute'], ['second', 'execute']]);
+  assert.deepEqual(s.calls.map(c => c.taskNumber), [2, 3]);
   assert.equal(readFileSync(s.path, 'utf8'), text.replace('[ ] first', '[x] first').replace('[ ] second', '[x] second'));
   assert.ok(s.calls.every(c => !c.context.includes('report')));
 });
@@ -145,6 +146,7 @@ for (const ending of ['\n', '', '\r\n']) test(`live additions survive marking an
   assert.equal(result.isError, false);
   assert.equal(result.details.completed, 3);
   assert.deepEqual(s.calls.map(c => c.task), ['first', 'second', 'third']);
+  assert.deepEqual(s.calls.map(c => c.taskNumber), [1, 3, 4]);
   assert.equal(readFileSync(s.path, 'utf8'), (initial + suffix + '- [ ] third\n').replace('[ ] first', '[x] first').replace('[ ] second', '[x] second').replace('[ ] third', '[x] third'));
 });
 

@@ -65,6 +65,17 @@ test('fresh native contexts submit normal supervisor prompts sequentially and pr
   assert.equal(f.host.listenerCount('SIGINT'), 0);
 });
 
+test('footer uses checkbox positions including previously completed items', async t => {
+  const f = fixture(t);
+  const text = '# Tasks\n- [x] one\n- [X] two\n- [x] three\n- [x] four\n- [x] five\n- [x] six\n```md\n- [ ] example\n```\n- [ ] seven\n- [x] eight\n- [ ] nine\n';
+  writeFileSync(f.path, text);
+  const result = await runNativeList(f.path, f.ctx, { host: f.host });
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, 2);
+  assert.deepEqual(f.statuses, ['Currently running #7', 'Currently running #9', undefined]);
+  assert.equal(readFileSync(f.path, 'utf8'), text.replace('[ ] seven', '[x] seven').replace('[ ] nine', '[x] nine'));
+});
+
 for (const reason of ['error', 'aborted']) test(`native ${reason} leaves item unchecked`, async t => {
   const f = fixture(t, () => reason);
   const result = await runNativeList(f.path, f.ctx, { host: f.host });

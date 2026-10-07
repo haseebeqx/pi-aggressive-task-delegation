@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 export function uncheckedTasks(text) {
   const tasks = [];
   let offset = 0;
+  let taskNumber = 0;
   let fence;
   for (const line of text.split(/(?<=\n)/)) {
     const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line);
@@ -13,11 +14,14 @@ export function uncheckedTasks(text) {
       if (!fence) fence = marker[1];
       else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = undefined;
     } else if (!fence) {
-      const match = /^(\s*(?:[-+*]|\d+[.)])\s+\[) (\]\s+)(.*)/.exec(line);
+      const match = /^(\s*(?:[-+*]|\d+[.)])\s+\[)([ xX])(\]\s+)(.*)/.exec(line);
       if (match) {
-        const task = match[3].trim();
-        if (!task) throw new Error('Unchecked tasks must have non-empty text.');
-        tasks.push({ task, offset: offset + match[1].length });
+        taskNumber++;
+        if (match[2] === ' ') {
+          const task = match[4].trim();
+          if (!task) throw new Error('Unchecked tasks must have non-empty text.');
+          tasks.push({ task, offset: offset + match[1].length, taskNumber });
+        }
       }
     }
     offset += line.length;
@@ -67,7 +71,7 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
       const item = uncheckedTasks(expected)[0];
       if (!item) break;
       const result = await execute({
-        task: item.task, mode: 'execute',
+        task: item.task, mode: 'execute', taskNumber: item.taskNumber,
         context: `Todo source: ${path}. Complete only this item. Do not edit the todo source; checkbox updates are managed by the list runner.`,
       }, signal);
       addUsage(usage, result.usage);

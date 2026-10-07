@@ -9,7 +9,6 @@ export async function runNativeList(path, ctx, { runList = runDelegateList, host
   const controller = new AbortController();
   let current = ctx;
   let removeInput;
-  let item = 0;
   let switching = false;
   const cancel = () => {
     if (controller.signal.aborted) return;
@@ -36,7 +35,7 @@ export async function runNativeList(path, ctx, { runList = runDelegateList, host
           replacement = await current.newSession({ withSession: async (fresh) => {
             current = fresh;
             controller.signal.throwIfAborted();
-            fresh.ui.setStatus('delegate-list', `Currently running #${++item}`);
+            fresh.ui.setStatus('delegate-list', `Currently running #${params.taskNumber}`);
             removeInput = fresh.ui.onTerminalInput(data => {
               if (matchesKey(data, 'ctrl+c') || parseKey(data) === 'ctrl+escape') {
                 cancel();
