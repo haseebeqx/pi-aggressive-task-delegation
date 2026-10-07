@@ -37,6 +37,18 @@ before its checkbox is saved and the next starts. Workers may recursively delega
 scoped discovery is available through `delegate_task` with `mode: "discover"`. Items receive only their
 own assignment and source path, not prior reports or Main history.
 
+## Supervisor guidance
+
+Main owns goals, cross-task constraints, breakdown, and integration; workers own
+implementation choices within their scope. Assignments favor outcomes and acceptance
+criteria over prescribed steps, except for concrete constraints or risks. Execution
+requires a useful split into at least two strictly smaller subtasks; otherwise the
+agent works directly. After independent review returns PASS, integrate without
+routinely repeating exploration, review, or leaf edits; targeted risk/integration
+checks and new evidence still matter. Failed review calls for a focused correction,
+not a success claim with unresolved failures. These are prompt guidance, not enforced
+execution limits.
+
 ## Task files
 
 Use a regular `.md` or `.markdown` file, relative to the working directory or an
