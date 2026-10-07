@@ -12,7 +12,7 @@ export function registerDelegateTasks(pi, {
   pi.registerTool({
     name: 'delegate_task',
     label: 'Delegate task',
-    description: 'Delegate a strictly smaller execution task to a fresh worker and independent reviewer, or gather scoped read-only facts with mode discover. Call sequentially and pass only relevant context. Never delegate the whole assignment unchanged. Discovery returns evidence and gaps, not implementation.',
+    description: 'Delegate an execution task to a fresh worker and independent reviewer, or gather scoped read-only facts with mode discover. Call sequentially and pass only relevant context. Main may delegate a single task; workers require at least two useful, strictly smaller subtasks or must execute directly. Discovery returns evidence and gaps, not implementation.',
     parameters: Type.Object({
       task: Type.String({ minLength: 1 }),
       mode: Type.Optional(Type.Union([Type.Literal('execute'), Type.Literal('discover')])),

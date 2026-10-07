@@ -108,9 +108,10 @@ Ctrl+C or Ctrl+Esc cancels the entire list. Cancellation does not undo edits.
 
 Main owns goals, cross-task constraints, breakdown, and integration; workers own
 implementation choices within their scope. Assignments favor outcomes and acceptance
-criteria over prescribed steps, except for concrete constraints or risks. Execution
-delegation requires a useful split into at least two strictly smaller subtasks; otherwise the
-agent works directly. After independent review returns PASS, integrate without
+criteria over prescribed steps, except for concrete constraints or risks. Main may
+delegate a single execution task. Worker execution
+delegation still requires a useful split into at least two strictly smaller subtasks;
+otherwise the worker works directly. After independent review returns PASS, integrate without
 routinely repeating exploration, review, or leaf edits; targeted risk/integration
 checks and new evidence still matter. Failed review calls for a focused correction,
 not a success claim with unresolved failures. These are prompt guidance, not enforced

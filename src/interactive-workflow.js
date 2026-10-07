@@ -14,13 +14,7 @@ exploration. It returns
 compact evidence-linked findings and gaps, not implementation or a plan. Request
 focused follow-up discovery for missing details rather than loading transcripts
 by default.
-For execution, delegate only when the task can be divided into at least two concrete, useful
-subtasks, each strictly smaller in scope than the original. Identify that split
-before calling delegate_task; aggressively delegate those smaller pieces rather
-than doing the divisible work yourself. If no useful split exists, execute the
-task directly with your own tools. Never delegate the whole task unchanged or
-merely reworded, or split it artificially just to delegate. These split rules apply
-only to execute mode, never to gathering facts in discover mode. Call delegate_task
+For execution, Main may delegate a single task with delegate_task. Do not split artificially. Call delegate_task
 once at a time, in dependency order when dependencies exist. Pass only the requirements,
 relevant paths, decisions, and concise prior results needed for each subtask.
 Execution runs a fresh worker followed by a fresh independent reviewer; discovery

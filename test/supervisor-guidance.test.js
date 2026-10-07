@@ -46,7 +46,13 @@ for (const [workflow, prompts] of Object.entries({ interactive, standalone })) {
       ]);
     });
 
-    test(`${workflow} ${role}: useful execution splits and direct leaf work remain required`, () => {
+    test(`${workflow} ${role}: Main can delegate one task while workers retain split rules`, () => {
+      if (role === 'supervisor') {
+        assert.match(prompt, /Main may delegate a single task with delegate_task/i);
+        assert.doesNotMatch(prompt, /at least two|If no useful split exists, execute|Never (?:delegate|forward) the whole task unchanged/i);
+        return;
+      }
+      assert.doesNotMatch(prompt, /Main may delegate a single task/i);
       check(prompt, [
         ['at least two useful, strictly smaller execution subtasks', /at least two (?:concrete, useful subtasks, each strictly smaller in scope|useful subtasks strictly smaller)/i],
         ['identify the split before delegating', /(?:Identify that split (?:before calling delegate_task|first)|identify at least two useful subtasks strictly smaller than the assignment, then)/i],
