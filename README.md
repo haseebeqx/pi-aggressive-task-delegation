@@ -55,12 +55,14 @@ to command contexts, not startup lifecycle handlers. Do not supply additional st
 prompts alongside the flag. Session-switch vetoes stop the list.
 An item is checked off when its normal agent run settles without an error or abort;
 interactive lists do not impose a separate whole-item reviewer gate.
-Non-interactive lists retain fresh workers and independent whole-item review.
+Non-interactive lists retain fresh workers and mandatory independent whole-item review:
+items must pass before being checked off. Per-delegation `review:false` does not
+bypass this gate; nested delegations may still choose their own review setting.
 In non-interactive mode the flag does not start a Main model turn. Do not supply a prompt, file reference, or piped input alongside
 the flag: Pi can process those separately after startup.
 
 Each item finishes (and, in non-interactive mode, passes independent review)
-before its checkbox is saved and the next starts. Workers may recursively delegate smaller tasks with fresh sessions;
+before its checkbox is saved and the next starts. Workers recursively delegate useful splits into smaller tasks with fresh sessions;
 scoped discovery is available through `delegate_task` with `mode: "discover"`. Items receive only their
 own assignment and source path, not prior reports or Main history.
 
@@ -73,7 +75,8 @@ It does not replace the current session or erase its history.
 | Parameter | Meaning |
 | --- | --- |
 | `task` | Required non-empty assignment and acceptance criteria, or factual discovery questions. |
-| `mode` | `"execute"` (default) runs a worker then an independent reviewer; `"discover"` runs a fact-gatherer without a separate reviewer. |
+| `mode` | `"execute"` (default) runs a worker, with independent review by default; `"discover"` runs a fact-gatherer without a separate reviewer. |
+| `review` | Optional boolean, default `true`. Set `false` to skip independent execution review; ignored for discovery. |
 | `context` | Optional relevant paths, constraints, decisions, and concise prior summaries; no history is copied automatically. |
 
 Example tool arguments:
@@ -86,11 +89,24 @@ Example tool arguments:
 }
 ```
 
-Execution returns worker and reviewer reports, aggregate usage, and transcript log
-paths. Approval requires the reviewer's trimmed report to begin with `PASS` on its
-own line; `FAIL` or a malformed verdict is not approval. Discovery returns findings
-and log paths, not an independent PASS verdict. Discovery children default to
-`discover` and cannot delegate execution. Sibling calls are serialized per context;
+Execution returns the worker report, an independent reviewer report when enabled,
+aggregate usage, and transcript log paths. Independent approval requires the
+reviewer's trimmed report to begin with `PASS` on its own line; `FAIL` or a malformed
+verdict is not approval. With `review:false`, successful worker completion returns
+without reviewer calls, logs, usage/cost, or review progress; the report explicitly
+says independent review was skipped. Worker failure or cancellation still fails.
+
+Execution metadata distinguishes completion from independent approval:
+- `details.approved` is the legacy success gate, **not** proof of independent review.
+- `details.completed` is the same successful delegation gate: true after PASS, or
+  after successful worker completion with `review:false`; false on failure.
+- `details.reviewStatus` is `passed`, `failed`, `skipped`, `not-run` (review never
+  reached, e.g. worker failure), or `error` (review interrupted or failed to run).
+- `details.independentApproved` is true only for an independent PASS.
+
+Discovery returns findings and log paths, not an independent PASS verdict; its
+metadata is unchanged and does not include these new execution-only fields.
+Discovery children default to `discover` and cannot delegate execution. Sibling calls are serialized per context;
 recursive children have their own queues.
 
 In the TUI, the focused child shows streaming assistant/tool output and uses Pi's
@@ -108,14 +124,34 @@ Ctrl+C or Ctrl+Esc cancels the entire list. Cancellation does not undo edits.
 
 Main owns goals, cross-task constraints, breakdown, and integration; workers own
 implementation choices within their scope. Assignments favor outcomes and acceptance
-criteria over prescribed steps, except for concrete constraints or risks. Main may
-delegate a single execution task. Worker execution
-delegation still requires a useful split into at least two strictly smaller subtasks;
-otherwise the worker works directly. After independent review returns PASS, integrate without
-routinely repeating exploration, review, or leaf edits; targeted risk/integration
-checks and new evidence still matter. Failed review calls for a focused correction,
-not a success claim with unresolved failures. These are prompt guidance, not enforced
-execution limits. A `delegate_task` review failure returns findings for the caller
+criteria over prescribed steps, except for concrete constraints or risks. Main must
+delegate substantive execution by default, including small self-contained tasks;
+it may delegate a single task without a split. Workers MUST delegate whenever at
+least two concrete, useful, strictly smaller execution subtasks exist: task size,
+ease, or speed are not opt-outs. Genuine leaves execute directly, even when hard.
+Never forward a whole worker assignment unchanged or merely reworded, or manufacture
+splits to delegate; each recursive execution step must reduce scope.
+
+Discovery is optional, not a prerequisite. When facts are needed, do only lightweight
+local orientation, then delegate separable factual questions even for small tasks.
+Focused factual leaves allow direct bounded lookups; already-known tasks need no
+discovery. Discovery agents MUST delegate whenever useful strictly narrower factual
+scopes exist, with no two-subtask threshold or artificial splitting. Focused leaves
+use targeted reads/searches directly. Discovery stays read-only and verifies evidence
+without a separate reviewer. All delegation is sequential, never parallel.
+
+Independent review defaults to true. Use `review:false` for low-risk, narrow work
+with concrete worker verification, or to avoid redundant nested reviews. Retain
+review for risky, security-sensitive or broad changes, uncertain verification, or
+explicit user requirements. Skipping review never skips worker verification.
+Integrate a review-skipped worker report with that limitation; do not call it PASS
+or independent approval. Non-interactive task-list whole-item review remains mandatory.
+
+After independent execution review returns PASS, integrate without routinely repeating
+exploration, review, or leaf edits; targeted risk/integration checks and new evidence
+still matter. Failed review calls for a focused delegated correction, not a success
+claim with unresolved failures. These are prompt guidance, not enforced execution
+limits. A `delegate_task` review failure returns findings for the caller
 to address; it does not itself shut down Main. A failed whole-item review in a
 non-interactive list stops that list.
 

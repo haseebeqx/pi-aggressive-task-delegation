@@ -71,12 +71,13 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
       const item = uncheckedTasks(expected)[0];
       if (!item) break;
       const result = await execute({
-        task: item.task, mode: 'execute', taskNumber: item.taskNumber,
+        task: item.task, mode: 'execute', review: true, taskNumber: item.taskNumber,
         context: `Todo source: ${path}. Complete only this item. Do not edit the todo source; checkbox updates are managed by the list runner.`,
       }, signal);
       addUsage(usage, result.usage);
       signal?.throwIfAborted();
-      if (result.isError || result.details?.approved !== true) throw new Error(result.content?.filter(p => p.type === 'text').map(p => p.text).join('\n') || 'Delegation did not succeed.');
+      if (result.isError || result.details?.approved !== true ||
+          result.details?.reviewStatus === 'skipped' || result.details?.independentApproved === false) throw new Error(result.content?.filter(p => p.type === 'text').map(p => p.text).join('\n') || 'Delegation did not succeed.');
       // No await between the fresh read and write: preserve safe appends,
       // but never overwrite changes to the previously observed text.
       refresh('Todo file changed; successful item left unchecked to avoid a conflict.');

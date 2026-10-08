@@ -209,3 +209,31 @@ test('requires an injected executor', async t => {
   assert.match(result.content[0].text, /executor/);
   assert.equal(readFileSync(s.path, 'utf8'), '- [ ] task\n');
 });
+
+for (const details of [
+  { approved: true, completed: true, reviewStatus: 'skipped', independentApproved: false },
+  { approved: true, reviewStatus: 'skipped' },
+  { approved: true, independentApproved: false },
+]) test(`whole-item gate rejects unreviewed success: ${JSON.stringify(details)}`, async t => {
+  const text = '- [ ] first\n- [ ] later\n';
+  const s = setup(t, text, () => ({ isError: false, details,
+    content: [{ type: 'text', text: 'Worker completion only; no independent approval.' }] }));
+  const result = await s.runnerRun();
+  assert.equal(result.isError, true);
+  assert.equal(result.details.completed, 0);
+  assert.equal(s.calls.length, 1);
+  assert.equal(s.calls[0].review, true);
+  assert.equal(readFileSync(s.path, 'utf8'), text);
+});
+
+for (const details of [
+  { approved: true, completed: true, reviewStatus: 'passed', independentApproved: true },
+  { approved: true }, // Legacy result compatibility (also used by interactive lists).
+]) test(`whole-item gate accepts reviewed/legacy success: ${JSON.stringify(details)}`, async t => {
+  const s = setup(t, '- [ ] first\n- [ ] later\n', () => ({ isError: false, details }));
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, 2);
+  assert.ok(s.calls.every(call => call.review === true && call.mode === 'execute'));
+  assert.equal(readFileSync(s.path, 'utf8'), '- [x] first\n- [x] later\n');
+});

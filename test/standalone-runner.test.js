@@ -150,3 +150,24 @@ test('auth configuration reaches SDK factory; registry-only credentials are not 
   assert.equal(calls[1].modelRuntime, undefined);
   assert.equal(calls[1].agentDir, f.dir);
 });
+
+test('review:false forwards through executor: only worker session, private log and usage', async t => {
+  const f = fixture(t, ['done']);
+  const progress = [];
+  const executor = createStandaloneExecutor({ cwd: f.dir, agentDir: f.dir, sdk: f.sdk,
+    onProgress: phase => progress.push(phase) });
+  const result = await executor.execute({ task: 'work', review: false });
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, true);
+  assert.equal(result.details.approved, true);
+  assert.equal(result.details.independentApproved, false);
+  assert.equal(result.details.reviewStatus, 'skipped');
+  assert.equal(f.sessions.length, 1);
+  assert.equal(f.loaders.length, 1);
+  assert.deepEqual(Object.keys(result.details.logs), ['worker']);
+  assert.equal(statSync(result.details.logs.worker).mode & 0o777, 0o600);
+  assert.equal(result.usage.input, 3);
+  assert.equal(result.usage.output, 2);
+  assert.deepEqual(progress, ['Working', 'worker: initializing']);
+  assert.equal(f.sessions[0].disposed && f.sessions[0].shutdown && f.sessions[0].unsubscribed, true);
+});

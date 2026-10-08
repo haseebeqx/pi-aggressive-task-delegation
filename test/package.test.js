@@ -46,6 +46,7 @@ test('npm tarball contains only runtime sources, metadata, README, and license',
     'src/interactive-delegation.js',
     'src/interactive-workflow.js',
     'src/log-storage.js', 'src/native-list.js',
+    'src/review-policy.js',
     'src/standalone-runner.js',
     'src/workflow.js',
   ]);

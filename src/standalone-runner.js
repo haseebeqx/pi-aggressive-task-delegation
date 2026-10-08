@@ -18,7 +18,7 @@ export const launcherExtensionPath = fileURLToPath(new URL('./extension.js', imp
  * exclusions and replacements. MCP starts on bindExtensions; servers may connect
  * asynchronously. No Main-only CLI extension paths or MCP connections are inherited.
  * sdk is an optional dependency-injection seam for tests. execute returns the
- * createDelegator result (details.approved is the reviewer gate).
+ * createDelegator result (details.approved is the legacy success gate; independentApproved identifies review approval).
  */
 export function createStandaloneExecutor({ cwd = process.cwd(), model, modelRuntime,
   thinkingLevel, signal: lifetimeSignal, onProgress, onOutput, agentDir,

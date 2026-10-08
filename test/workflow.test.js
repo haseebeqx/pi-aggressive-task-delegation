@@ -17,7 +17,8 @@ test('worker then independent reviewer; only reports and aggregate usage return'
   assert.match(calls[1].prompt, /Changed src\/a.js/);
   assert.equal(result.isError, false);
   assert.equal(result.usage.input, 2);
-  assert.deepEqual(result.details, { approved: true });
+  assert.deepEqual(result.details, { approved: true, completed: true,
+    reviewStatus: 'passed', independentApproved: true });
   assert.equal(JSON.stringify(result).includes('messages'), false);
 });
 
