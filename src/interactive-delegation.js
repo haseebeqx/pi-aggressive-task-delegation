@@ -1,4 +1,4 @@
-import { reviewGuidance } from './review-policy.js';
+import { delegationDescription } from './role-prompts.js';
 import {
   AssistantMessageComponent, ToolExecutionComponent, FooterComponent,
   createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager,
@@ -25,7 +25,7 @@ function delegationTool(runAgent, discoveryOnly = false) {
   return {
     name: 'delegate_task',
     label: 'pi aggressive task delegation',
-    description: `Delegate substantive execution by default, including small self-contained tasks, or gather read-only evidence with mode discover in a fresh context. Main may delegate a single execution task; workers MUST delegate whenever at least two concrete, useful, strictly smaller execution subtasks exist. Task size, ease, or speed are not opt-outs. Genuine execution leaves work directly; never forward a whole worker assignment or split artificially. Discovery is optional: do only lightweight local orientation, then delegate separable factual questions even for small tasks; focused factual leaves permit direct bounded lookups and already-known tasks need no discovery. Discovery agents MUST recurse whenever useful strictly narrower factual scopes exist, sequentially with mode discover only; no two-subtask threshold applies and artificial splits are forbidden. Discovery needs no predefined split and returns compact verified evidence and gaps (soft target about 300 words), not implementation, a plan, or raw logs. Main owns goals, cross-task constraints, task breakdown, and integration; workers own scoped implementation choices. Assign outcomes and acceptance criteria rather than prescribed steps unless required by a concrete constraint or risk. Calls run sequentially. Execution receives independent review by default; discovery verifies evidence without a separate review stage. Request focused follow-up discovery for missing details rather than loading transcripts by default. After PASS, integrate without routinely repeating exploration, review, or leaf edits. Use targeted checks only for specific risks, contradictions, gaps, or cross-task integration; do not ignore new evidence. On review failure, delegate a focused correction before proceeding; do not claim success with unresolved failures. ${reviewGuidance}`,
+    description: delegationDescription,
     parameters: Type.Object({
       task: Type.String({ minLength: 1, description: 'Concrete execution task and acceptance criteria, or discovery scope/questions.' }),
       mode: Type.Optional(Type.Union([Type.Literal('execute'), Type.Literal('discover')], {
