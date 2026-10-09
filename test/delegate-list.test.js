@@ -116,12 +116,12 @@ for (const kind of ['failure', 'throw', 'cancel']) test(`stops on ${kind} leavin
   assert.equal(readFileSync(s.path, 'utf8'), '- [x] one\n- [ ] two\n- [ ] three\n');
 });
 
-test('conflicting edits are never overwritten', async t => {
+test('removing the list preserves external text and finishes normally', async t => {
   const s = setup(t, '- [ ] first\n- [ ] second', (_, path) => { writeFileSync(path, 'changed externally'); return pass; });
   await s.run();
   assert.equal(readFileSync(s.path, 'utf8'), 'changed externally');
   assert.equal(s.calls.length, 1);
-  assert.match(s.notices.at(-1)[0], /changed/);
+  assert.match(s.notices.at(-1)[0], /0 item\(s\) completed/);
 });
 
 test('validates input before executing', async t => {
@@ -214,14 +214,101 @@ for (const ending of ['\n', '', '\r\n']) test(`live additions survive marking an
   assert.equal(readFileSync(s.path, 'utf8'), (initial + suffix + '- [ ] third\n').replace('[ ] first', '[x] first').replace('[ ] second', '[x] second').replace('[ ] third', '[x] third'));
 });
 
-for (const changed of ['- [ ] first extended\n- [ ] second\n', '- [x] first\n- [ ] second\n', '- [ ] fir', '- [ ] other\n- [ ] second\n']) test(`rejects unsafe edits: ${JSON.stringify(changed)}`, async t => {
-  const s = setup(t, '- [ ] first', (_n, path) => { writeFileSync(path, changed); return pass; });
+for (const changed of ['- [ ] first extended\n- [ ] second\n', '- [x] first\n- [ ] second\n', '- [ ] fir', '- [ ] other\n- [ ] second\n']) test(`live edits are processed: ${JSON.stringify(changed)}`, async t => {
+  const s = setup(t, '- [ ] first', (n, path) => { if (n === 1) writeFileSync(path, changed); return pass; });
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.deepEqual(s.calls.map(c => c.task), ['first', ...uncheckedTasks(changed).map(c => c.task)]);
+  assert.equal(result.details.items[0].completed, changed.includes('[x] first'));
+  assert.equal(readFileSync(s.path, 'utf8'), changed.replaceAll('[ ]', '[x]'));
+});
+
+for (const ending of ['\n', '\r\n']) test(`insertions, pending edits and reordering preserve latest text (${JSON.stringify(ending)})`, async t => {
+  const initial = ['# Tasks', '- [ ] active', '- [ ] pending', '- [x] done'].join(ending) + ending;
+  const changed = ['# New heading', '- [ ] inserted before', '- [ ] pending revised', '- [x] done revised', '- [ ] active', '- [ ] inserted after'].join(ending) + ending;
+  const s = setup(t, initial, (n, path) => {
+    if (n === 1) writeFileSync(path, changed);
+    else assert.match(readFileSync(path, 'utf8'), /\[x\] active/);
+    return pass;
+  });
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, 4);
+  assert.deepEqual(s.calls.map(c => c.task), ['active', 'inserted before', 'pending revised', 'inserted after']);
+  assert.equal(readFileSync(s.path, 'utf8'), changed.replaceAll('[ ]', '[x]'));
+});
+
+for (const change of ['edit', 'delete']) test(`active ${change} does not apply stale approval`, async t => {
+  const changed = change === 'edit' ? '- [ ] revised\n- [ ] later\n' : '- [ ] later\n';
+  const s = setup(t, '- [ ] active\n- [ ] later\n', (n, path) => {
+    if (n === 1) writeFileSync(path, changed);
+    if (n === 2) {
+      // First approval must not change any part of the latest file.
+      assert.equal(readFileSync(path, 'utf8'), changed);
+      return { isError: true };
+    }
+    return pass;
+  });
   const result = await s.runnerRun();
   assert.equal(result.isError, true);
   assert.equal(result.details.completed, 0);
-  assert.match(result.content[0].text, /conflict/);
+  assert.equal(result.details.items[0].completed, false);
+  assert.deepEqual(s.calls.map(c => c.task), ['active', change === 'edit' ? 'revised' : 'later']);
   assert.equal(readFileSync(s.path, 'utf8'), changed);
-  assert.equal(s.calls.length, 1);
+});
+
+test('external checkbox edits skip checked tasks and rerun reopened completed tasks', async t => {
+  const changed = '- [X] active\r\n- [x] pending\r\n- [ ] completed revised\r\n';
+  const s = setup(t, '- [ ] active\r\n- [ ] pending\r\n- [x] completed\r\n', (n, path) => {
+    if (n === 1) writeFileSync(path, changed);
+    if (n === 2) assert.equal(readFileSync(path, 'utf8'), changed);
+    return pass;
+  });
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.deepEqual(s.calls.map(c => c.task), ['active', 'completed revised']);
+  assert.equal(readFileSync(s.path, 'utf8'), changed.replace('[ ]', '[x]'));
+});
+
+test('unchanged duplicate lists terminate and execute each occurrence', async t => {
+  const s = setup(t, '- [ ] same\n- [ ] same\n- [x] same\n');
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, 2);
+  assert.equal(s.calls.length, 2);
+  assert.equal(readFileSync(s.path, 'utf8'), '- [x] same\n- [x] same\n- [x] same\n');
+});
+
+for (const changed of [
+  '# shifted\n- [ ] same\n- [ ] same\n',
+  '- [ ] same\n',
+  '- [x] same\n- [ ] same\n',
+  '- [ ] revised\n- [ ] same\n',
+]) test(`ambiguous duplicate changes never check another occurrence: ${JSON.stringify(changed)}`, async t => {
+  const s = setup(t, '- [ ] same\n- [ ] same\n', (n, path) => {
+    if (n === 1) writeFileSync(path, changed);
+    if (n === 2) assert.equal(readFileSync(path, 'utf8'), changed);
+    assert.ok(n <= 4, 'duplicate retry must terminate');
+    return pass;
+  });
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.items[0].completed, false);
+  assert.equal(result.details.completed, uncheckedTasks(changed).length);
+  assert.equal(readFileSync(s.path, 'utf8'), changed.replaceAll('[ ]', '[x]'));
+});
+
+test('adding an identical task during execution cannot inherit approval', async t => {
+  const changed = '- [ ] same\n- [ ] same\n';
+  const s = setup(t, '- [ ] same\n', (n, path) => {
+    if (n === 1) writeFileSync(path, changed);
+    if (n === 2) assert.equal(readFileSync(path, 'utf8'), changed);
+    return pass;
+  });
+  const result = await s.runnerRun();
+  assert.equal(result.details.items[0].completed, false);
+  assert.equal(result.details.completed, 2);
+  assert.equal(s.calls.length, 3);
 });
 
 for (const kind of ['failure', 'cancel']) test(`live additions stay unchecked on ${kind}`, async t => {

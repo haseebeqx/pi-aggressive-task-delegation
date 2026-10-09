@@ -185,22 +185,30 @@ completed during this run. Continuation lines/headings are not task context.
 Empty unchecked items are rejected before work starts. After successful completion,
 the runner waits for checkbox persistence before starting
 the next item. Only that checkbox's space changes to `x`; formatting and line endings remain
-unchanged. Failure, cancellation, or file conflicts stop the list with remaining
+unchanged. Failure or cancellation stops the list with remaining
 items unchecked. There are no automatic retries or rollback of worker edits.
 Rerun the command to resume unchecked items.
 
-You may append tasks while the runner is active, including while its last item is
-in flight. The file is reread before execution and marking; append-only additions
-are preserved when checking off the current item and discovered sequentially.
-If the file has no final newline, begin the appended content with a newline
-(`LF` or `CRLF`) rather than extending the existing line. Changes to any existing
-text (including checkboxes), truncation, or unsafe line-extending appends cause an
-explicit conflict without overwriting edits; even a successful item remains
-unchecked on conflict. The runner finishes as soon as a fresh read finds no
-unchecked tasks; it does not wait for future additions. Additions after that
-completion cutoff require another run. File updates are not protected by filesystem
-locking: an external write between the runner's read and checkbox write could be
-lost. Avoid concurrent writes during that brief update window.
+You may insert tasks anywhere, edit pending or completed items, reorder or delete
+items, and change checkboxes while the runner is active. The file is reread before
+choosing each task and before marking approved work; latest external text and line
+endings are preserved. Checking an item externally skips it; unchecking a completed
+item queues it again.
+
+An in-flight task is marked only if its exact task text is unchanged and can be
+safely identified in the latest file, even after shifts or reordering. Editing or
+deleting that task leaves the latest file untouched; the runner continues with the
+latest unchecked tasks, so revised text must execute and pass independent review
+again. Duplicate task text is ambiguous across edits: the runner leaves that
+approval unmarked rather than checking an unrelated occurrence, then executes the
+latest unchecked items afresh. Unchanged duplicate lists are processed normally.
+Use distinct self-contained task descriptions to avoid redundant execution.
+
+The runner finishes as soon as a fresh read finds no unchecked tasks; it does not
+wait for future additions. Additions after that completion cutoff require another
+run. File updates are not protected by filesystem locking: an external write
+between the runner's read and checkbox write could be lost. Avoid concurrent writes
+during that brief update window.
 
 ## Progress, cancellation, and exit
 
@@ -294,7 +302,7 @@ pi -e ./src/extension.js
 npm run test:smoke
 ```
 
-`npm test` covers list parsing/persistence, conflicts and live appends, review gates,
+`npm test` covers list parsing/persistence, live editing and duplicate safety, review gates,
 cancellation, tool inheritance, UI focus/transcript handling, and SDK integration.
 The offline smoke test is not an end-to-end model execution test. `npm run prepack`
 runs syntax checks and the test suite before packaging.
