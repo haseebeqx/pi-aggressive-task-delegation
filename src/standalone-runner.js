@@ -55,14 +55,16 @@ export function createStandaloneExecutor({ cwd = process.cwd(), model, modelRunt
         { name: 'mcp', builtin: true, replaceable: true, factory: sdk.createMcpExtension() },
       ],
     });
-    const logDirectory = allocateLogDirectory(directory, cwd, parent, role);
-    const logPath = seedPrivateSession(sdk.SessionManager.create(cwd, logDirectory));
-    const sessionManager = sdk.SessionManager.open(logPath, logDirectory);
     const usage = emptyUsage();
+    let sessionManager, logPath;
     let session, unsubscribe;
     let abortPending;
     const abort = () => { abortPending = Promise.resolve(session.abort()).catch(() => {}); };
     try {
+      const logDirectory = allocateLogDirectory(directory, cwd, parent, role);
+      sessionManager = sdk.SessionManager.create(cwd, logDirectory);
+      logPath = seedPrivateSession(sessionManager);
+      sessionManager = sdk.SessionManager.open(logPath, logDirectory);
       await loader.reload();
       signal?.throwIfAborted();
       ({ session } = await sdk.createAgentSession({ cwd, agentDir: directory, model,
@@ -88,10 +90,10 @@ export function createStandaloneExecutor({ cwd = process.cwd(), model, modelRunt
       }
       const report = last.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n').trim();
       if (!report) throw new Error(`${role} returned no report.`);
-      return { report, usage, logPath };
+      return { report, usage, logPath, sessionId: sessionManager?.getSessionId?.() };
     } catch (cause) {
       const error = new Error(cause?.message ?? String(cause), { cause });
-      Object.assign(error, { usage, logPath });
+      Object.assign(error, { usage, logPath, sessionId: sessionManager?.getSessionId?.() });
       throw error;
     } finally {
       signal?.removeEventListener('abort', abort);

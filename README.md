@@ -4,7 +4,7 @@ Interactive task delegation and sequential Markdown task execution with fresh wo
 
 Two entry points:
 
-- `/delegate-tasks <task>` keeps the current conversation as Main and delegates smaller tasks into fresh contexts.
+- `/delegate-tasks <task>` keeps the current conversation as Main and uses fresh contexts only when delegation is worth its overhead.
 - `--delegate-list <path>` processes unchecked Markdown items sequentially, starting fresh for each item.
 
 Fresh contexts isolate conversation history, **not the filesystem or OS permissions**.
@@ -43,8 +43,9 @@ pi remove npm:@haseebeqx/pi-aggressive-task-delegation
 The flag is a literal path, not an `@file` reference. It runs once on actual startup,
 never on reload or session switching. The interactive `/delegate-tasks <task>`
 command and `delegate_task` tool are available with or without the flag.
-The command keeps Main as a context-preserving supervisor, delegating smaller
-execution tasks sequentially with independent review and scoped read-only discovery.
+The command keeps Main in the current context, working directly by default and
+selectively delegating substantial scopes when context isolation justifies the cost.
+Delegated execution has independent review by default; scoped read-only discovery is optional.
 In interactive mode, each item starts a fresh regular Pi session in the current
 window. The item supervisor uses Pi's normal chat, tools, and permissions, with
 `delegated task #n` added to the footer. Nested delegation adds its own focused
@@ -62,14 +63,15 @@ In non-interactive mode the flag does not start a Main model turn. Do not supply
 the flag: Pi can process those separately after startup.
 
 Each item finishes (and, in non-interactive mode, passes independent review)
-before its checkbox is saved and the next starts. Workers recursively delegate useful splits into smaller tasks with fresh sessions;
+before its checkbox is saved and the next starts. Workers execute directly by default,
+using recursive delegation only when a substantial smaller scope justifies its overhead;
 scoped discovery is available through `delegate_task` with `mode: "discover"`. Items receive only their
 own assignment and source path, not prior reports or Main history.
 
 ## Delegation tool and interactive controls
 
 `delegate_task` is model-callable; it is not a slash command. `/delegate-tasks`
-submits supervisor guidance and your task to Main, which chooses how to split it.
+submits efficiency guidance and your task to Main, which chooses whether delegation helps.
 It does not replace the current session or erase its history.
 
 | Parameter | Meaning |
@@ -122,23 +124,34 @@ Ctrl+C or Ctrl+Esc cancels the entire list. Cancellation does not undo edits.
 
 ## Supervisor guidance
 
+User requirements take precedence over this extension's prompt guidance when they
+conflict, including workflow, scope, methods, and output format. Relevant requirements
+must be carried into every child assignment, not silently dropped or reinterpreted.
+This applies to Main, workers, discovery agents, and reviewers. Platform safety rules
+and hard tool constraints still apply; agents must explain conflicts they cannot satisfy.
+For example, prompt guidance cannot bypass the non-interactive whole-item review gate
+or make discovery tools permit blocked writes.
+
+Main and workers **work directly by default**. Delegate only when a concrete benefit
+outweighs extra model calls, tokens, startup time, context handoff, and review cost.
+Good candidates are large, context-heavy investigations or substantial self-contained
+implementation scopes. Small fixes, routine lookups, focused questions, and already
+understood tasks normally stay local. Having separable steps is not enough; if the
+benefit is unclear, stay local. Explicit requests not to use workers take precedence.
+
 Main owns goals, cross-task constraints, breakdown, and integration; workers own
 implementation choices within their scope. Assignments favor outcomes and acceptance
-criteria over prescribed steps, except for concrete constraints or risks. Main must
-delegate substantive execution by default, including small self-contained tasks;
-it may delegate a single task without a split. Workers MUST delegate whenever at
-least two concrete, useful, strictly smaller execution subtasks exist: task size,
-ease, or speed are not opt-outs. Genuine leaves execute directly, even when hard.
-Never forward a whole worker assignment unchanged or merely reworded, or manufacture
-splits to delegate; each recursive execution step must reduce scope.
+criteria over prescribed steps, except for concrete constraints or risks. Recursive
+delegation is exceptional and must independently justify its overhead for a substantial,
+strictly smaller scope. Never forward an unchanged assignment, manufacture splits,
+or create supervisor chains for work the current agent can finish.
 
-Discovery is optional, not a prerequisite. When facts are needed, do only lightweight
-local orientation, then delegate separable factual questions even for small tasks.
-Focused factual leaves allow direct bounded lookups; already-known tasks need no
-discovery. Discovery agents MUST delegate whenever useful strictly narrower factual
-scopes exist, with no two-subtask threshold or artificial splitting. Focused leaves
-use targeted reads/searches directly. Discovery stays read-only and verifies evidence
-without a separate reviewer. All delegation is sequential, never parallel.
+Discovery is optional, not a prerequisite. Use targeted local reads/searches first;
+do not start a child for facts that are cheap to obtain directly. Delegate discovery
+only for substantial bounded investigations that benefit from context isolation.
+Discovery agents also gather facts directly by default and stop when their questions
+are answered. Discovery stays read-only and verifies evidence without a separate
+reviewer. All delegation is sequential, never parallel.
 
 Independent review defaults to true. Use `review:false` for low-risk, narrow work
 with concrete worker verification, or to avoid redundant nested reviews. Retain
@@ -149,8 +162,8 @@ or independent approval. Non-interactive task-list whole-item review remains man
 
 After independent execution review returns PASS, integrate without routinely repeating
 exploration, review, or leaf edits; targeted risk/integration checks and new evidence
-still matter. Failed review calls for a focused delegated correction, not a success
-claim with unresolved failures. These are prompt guidance, not enforced execution
+still matter. Address failed review findings directly unless a focused delegation
+independently justifies its overhead; never claim success with unresolved failures. These are prompt guidance, not enforced execution
 limits. A `delegate_task` review failure returns findings for the caller
 to address; it does not itself shut down Main. A failed whole-item review in a
 non-interactive list stops that list.
@@ -193,7 +206,12 @@ lost. Avoid concurrent writes during that brief update window.
 
 TUI uses a fresh normal session for each item and shows `delegated task #n`
 at the bottom. The status clears on completion or failure; Pi stays open on the
-last item's session, with a final notification. Ctrl+C or Ctrl+Esc during execution cancels the list. Non-TUI
+last item's session, with a final notification. Final list output associates available
+session IDs and transcript log paths with each attempted task, including failed or
+cancelled tasks. Interactive output includes the supervisor ID and child metadata
+from `delegate_task` results, labelled by call number and tool-call ID when available;
+use these real session IDs to inspect tool calls manually. Missing IDs are omitted.
+Ctrl+C or Ctrl+Esc during execution cancels the list. Non-TUI
 output goes to stderr: task labels, tool start/end events, completed assistant text
 from workers/reviewers/discovery agents, and final counts/errors. It is not a raw
 transcript stream, but can include substantive reports and sensitive information.

@@ -107,7 +107,7 @@ export default function taskDivider(pi) {
   });
 
   // A child receives a new conversation, never a copy of its parent's messages.
-  // Persist it separately; only the log path is returned to the caller.
+  // Persist it separately; return its log path and authoritative session ID.
   async function runAgent(role, prompt, signal, parentCtx, scope, task) {
     signal?.throwIfAborted();
     const loader = new DefaultResourceLoader({
@@ -123,112 +123,118 @@ export default function taskDivider(pi) {
     const parentSession = parentCtx.sessionManager?.getSessionFile() ??
       parentCtx.sessionManager?.getSessionId() ?? ephemeralParent;
     const logDirectory = allocateLogDirectory(getAgentDir(), parentCtx.cwd, parentSession, role);
-    const freshManager = SessionManager.create(parentCtx.cwd, logDirectory);
-    const logPath = seedPrivateSession(freshManager);
-    const sessionManager = SessionManager.open(logPath, logDirectory);
-    sessionManager.appendCustomEntry('delegation', { role, parentSession });
-    let node;
-    const { session } = await createAgentSession({
-      cwd: parentCtx.cwd,
-      model: parentCtx.model,
-      thinkingLevel: parentCtx.thinkingLevel,
-      resourceLoader: loader,
-      sessionManager,
-      ...inheritTools(parentCtx, makeTool(parentCtx, () => node, role.startsWith('discover')),
-        { discoveryOnly: role.startsWith('discover') }),
-    }).catch((error) => {
-      error.logPath = logPath;
-      throw error;
-    });
-    if (signal?.aborted) {
-      session.dispose();
-      const error = new Error('Delegated session cancelled before starting.');
-      error.logPath = logPath;
-      throw error;
-    }
-    // Use the parent's configured provider and request-time credentials rather
-    // than assuming a subprocess or a separate authentication configuration.
-    session.agent.streamFunction = (model, context, options) =>
-      parentCtx.modelRegistry.streamSimple(model, context, options);
-    session.agent.toolExecution = 'sequential';
-    activeSessions.add(session);
-    node = view.enter(scope, session, role, task);
-    node.cwd = parentCtx.cwd;
-    const abort = () => {
-      // Agent-only abort leaves session-level retry/compaction work alive.
-      void session.abort().catch(() => {});
-    };
-    signal?.addEventListener('abort', abort, { once: true });
-    const usage = emptyUsage();
-    node.usage = usage;
-    // Accumulate usage as events arrive, including nested delegation results.
-    let assistantRecord;
-    let toolRecord;
-    const unsubscribe = session.subscribe((event) => {
-      footer.refresh(node);
-      if (event.type === 'message_end' &&
-          (event.message.role === 'assistant' || event.message.role === 'toolResult')) {
-        addUsage(usage, event.message.usage);
-        view.update(node);
+    let sessionManager = SessionManager.create(parentCtx.cwd, logDirectory);
+    try {
+      const logPath = seedPrivateSession(sessionManager);
+      sessionManager = SessionManager.open(logPath, logDirectory);
+      sessionManager.appendCustomEntry('delegation', { role, parentSession });
+      let node;
+      const { session } = await createAgentSession({
+        cwd: parentCtx.cwd,
+        model: parentCtx.model,
+        thinkingLevel: parentCtx.thinkingLevel,
+        resourceLoader: loader,
+        sessionManager,
+        ...inheritTools(parentCtx, makeTool(parentCtx, () => node, role.startsWith('discover')),
+          { discoveryOnly: role.startsWith('discover') }),
+      }).catch((error) => {
+        error.logPath = logPath;
+        throw error;
+      });
+      if (signal?.aborted) {
+        session.dispose();
+        const error = new Error('Delegated session cancelled before starting.');
+        error.logPath = logPath;
+        throw error;
       }
-      if (updateDelegationMessage(node, event)) {
-        try {
-          if (ui) {
-            if (event.type.startsWith('message_')) {
-              const content = { message: structuredClone(node.message), streaming: node.streaming };
-              if (event.type === 'message_start' || !assistantRecord) {
-                assistantRecord = transcript.start(node, 'assistant', content);
-              } else transcript.update(assistantRecord, content);
-              if (event.type === 'message_end') transcript.update(assistantRecord, content, true);
-            } else {
-              const content = { tool: structuredClone(node.tool) };
-              if (event.type === 'tool_execution_start' || !toolRecord) {
-                toolRecord = transcript.start(node, 'tool', content);
-              } else transcript.update(toolRecord, content);
-              if (event.type === 'tool_execution_end') transcript.update(toolRecord, content, true);
+      // Use the parent's configured provider and request-time credentials rather
+      // than assuming a subprocess or a separate authentication configuration.
+      session.agent.streamFunction = (model, context, options) =>
+        parentCtx.modelRegistry.streamSimple(model, context, options);
+      session.agent.toolExecution = 'sequential';
+      activeSessions.add(session);
+      node = view.enter(scope, session, role, task);
+      node.cwd = parentCtx.cwd;
+      const abort = () => {
+        // Agent-only abort leaves session-level retry/compaction work alive.
+        void session.abort().catch(() => {});
+      };
+      signal?.addEventListener('abort', abort, { once: true });
+      const usage = emptyUsage();
+      node.usage = usage;
+      // Accumulate usage as events arrive, including nested delegation results.
+      let assistantRecord;
+      let toolRecord;
+      const unsubscribe = session.subscribe((event) => {
+        footer.refresh(node);
+        if (event.type === 'message_end' &&
+            (event.message.role === 'assistant' || event.message.role === 'toolResult')) {
+          addUsage(usage, event.message.usage);
+          view.update(node);
+        }
+        if (updateDelegationMessage(node, event)) {
+          try {
+            if (ui) {
+              if (event.type.startsWith('message_')) {
+                const content = { message: structuredClone(node.message), streaming: node.streaming };
+                if (event.type === 'message_start' || !assistantRecord) {
+                  assistantRecord = transcript.start(node, 'assistant', content);
+                } else transcript.update(assistantRecord, content);
+                if (event.type === 'message_end') transcript.update(assistantRecord, content, true);
+              } else {
+                const content = { tool: structuredClone(node.tool) };
+                if (event.type === 'tool_execution_start' || !toolRecord) {
+                  toolRecord = transcript.start(node, 'tool', content);
+                } else transcript.update(toolRecord, content);
+                if (event.type === 'tool_execution_end') transcript.update(toolRecord, content, true);
+              }
             }
+            // Bound streaming work, but always paint boundaries and final content.
+            if (event.type !== 'message_update' || Date.now() - lastPaint > 100) {
+              lastPaint = Date.now();
+              view.update(node);
+              terminalUI?.requestRender();
+            }
+          } catch (error) {
+            disableUI(error);
           }
-          // Bound streaming work, but always paint boundaries and final content.
-          if (event.type !== 'message_update' || Date.now() - lastPaint > 100) {
-            lastPaint = Date.now();
-            view.update(node);
-            terminalUI?.requestRender();
-          }
+        }
+      });
+      try {
+        signal?.throwIfAborted();
+        await session.prompt(prompt);
+        signal?.throwIfAborted();
+        const last = session.messages.findLast((message) => message.role === 'assistant');
+        if (!last || last.stopReason === 'error' || last.stopReason === 'aborted') {
+          throw new Error(last?.errorMessage || `${role} did not complete.`);
+        }
+        const report = last.content.filter((part) => part.type === 'text')
+          .map((part) => part.text).join('\n').trim();
+        if (!report) throw new Error(`${role} returned no report.`);
+        return { report, usage, logPath: sessionManager.getSessionFile(),
+          sessionId: sessionManager.getSessionId?.() };
+      } catch (error) {
+        const logPath = sessionManager.getSessionFile();
+        if (logPath && existsSync(logPath)) error.logPath = logPath;
+        error.usage = usage;
+        throw error;
+      } finally {
+        // Preserve partial output even when cancellation prevents a final event.
+        try {
+          if (assistantRecord?.streaming) transcript.update(assistantRecord, { streaming: false }, true);
+          if (toolRecord && (!toolRecord.tool.result || toolRecord.tool.partial)) transcript.update(toolRecord, {}, true);
         } catch (error) {
           disableUI(error);
         }
+        unsubscribe();
+        signal?.removeEventListener('abort', abort);
+        activeSessions.delete(session);
+        view.leave(node);
+        session.dispose();
       }
-    });
-    try {
-      signal?.throwIfAborted();
-      await session.prompt(prompt);
-      signal?.throwIfAborted();
-      const last = session.messages.findLast((message) => message.role === 'assistant');
-      if (!last || last.stopReason === 'error' || last.stopReason === 'aborted') {
-        throw new Error(last?.errorMessage || `${role} did not complete.`);
-      }
-      const report = last.content.filter((part) => part.type === 'text')
-        .map((part) => part.text).join('\n').trim();
-      if (!report) throw new Error(`${role} returned no report.`);
-      return { report, usage, logPath: sessionManager.getSessionFile() };
     } catch (error) {
-      const logPath = sessionManager.getSessionFile();
-      if (logPath && existsSync(logPath)) error.logPath = logPath;
-      error.usage = usage;
+      error.sessionId = sessionManager.getSessionId?.();
       throw error;
-    } finally {
-      // Preserve partial output even when cancellation prevents a final event.
-      try {
-        if (assistantRecord?.streaming) transcript.update(assistantRecord, { streaming: false }, true);
-        if (toolRecord && (!toolRecord.tool.result || toolRecord.tool.partial)) transcript.update(toolRecord, {}, true);
-      } catch (error) {
-        disableUI(error);
-      }
-      unsubscribe();
-      signal?.removeEventListener('abort', abort);
-      activeSessions.delete(session);
-      view.leave(node);
-      session.dispose();
     }
   }
 

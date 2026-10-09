@@ -29,12 +29,25 @@ export function uncheckedTasks(text) {
   return tasks;
 }
 
-const outcome = (completed, error, usage) => ({
-    content: [{ type: 'text', text: error
-      ? `delegate-list stopped after ${completed} item(s): ${error}`
-      : `delegate-list: ${completed} item(s) completed.` }],
-    details: { completed }, isError: Boolean(error), usage,
-  });
+const outcome = (completed, error, usage, items = []) => {
+  const summary = error
+    ? `delegate-list stopped after ${completed} item(s): ${error}`
+    : `delegate-list: ${completed} item(s) completed.`;
+  const lines = [summary];
+  for (const item of items) {
+    lines.push(`Task ${item.taskNumber} [${item.completed ? 'completed' : 'not completed'}]: ${item.task}`);
+    for (const [role, sessionId] of Object.entries(item.sessionIds)) {
+      if (sessionId) lines.push(`  ${role} session ID: ${sessionId}`);
+    }
+    for (const [role, log] of Object.entries(item.logs)) {
+      if (log) lines.push(`  ${role} transcript log: ${log}`);
+    }
+  }
+  return {
+    content: [{ type: 'text', text: lines.join('\n') }],
+    details: { completed, items }, isError: Boolean(error), usage,
+  };
+};
 
 const activePaths = new Set();
 
@@ -47,6 +60,7 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
   if (activePaths.has(key)) return outcome(0, 'A delegate-list run is already active.');
   activePaths.add(key);
   let completed = 0;
+  const items = [];
   const usage = emptyUsage();
   try {
     signal?.throwIfAborted();
@@ -70,10 +84,17 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
       refresh('Todo file changed; stopping without overwriting it.');
       const item = uncheckedTasks(expected)[0];
       if (!item) break;
+      const attempt = {
+        taskNumber: item.taskNumber, task: item.task, completed: false,
+        sessionIds: {}, logs: {},
+      };
+      items.push(attempt);
       const result = await execute({
         task: item.task, mode: 'execute', review: true, taskNumber: item.taskNumber,
         context: `Todo source: ${path}. Complete only this item. Do not edit the todo source; checkbox updates are managed by the list runner.`,
       }, signal);
+      attempt.sessionIds = { ...(result?.details?.sessionIds ?? {}) };
+      attempt.logs = { ...(result?.details?.logs ?? {}) };
       addUsage(usage, result.usage);
       signal?.throwIfAborted();
       if (result.isError || result.details?.approved !== true ||
@@ -83,10 +104,11 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
       refresh('Todo file changed; successful item left unchecked to avoid a conflict.');
       expected = expected.slice(0, item.offset) + 'x' + expected.slice(item.offset + 1);
       writeFileSync(path, expected, 'utf8');
+      attempt.completed = true;
       completed++;
     }
-    return outcome(completed, undefined, usage);
+    return outcome(completed, undefined, usage, items);
   } catch (error) {
-    return outcome(completed, String(error?.message ?? error).slice(0, 1000), usage);
+    return outcome(completed, String(error?.message ?? error).slice(0, 1000), usage, items);
   } finally { activePaths.delete(key); }
 }

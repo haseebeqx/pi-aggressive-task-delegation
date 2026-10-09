@@ -81,9 +81,10 @@ test('empty tasks are rejected without launching agents', async () => {
   await assert.rejects(delegate({ task: '  ' }), /non-empty/);
 });
 
-test('workers use the delegation supervisor workflow and reviewers remain independent', () => {
+test('workers favor direct execution and reviewers remain independent', () => {
   assert.deepEqual(Object.keys(rolePrompts), ['worker', 'reviewer', 'discoverer']);
-  assert.match(rolePrompts.worker, /context-preserving supervisor/);
+  assert.match(rolePrompts.worker, /Complete your assignment directly by default/);
+  assert.match(rolePrompts.worker, /Recursive delegation is exceptional/);
   assert.match(rolePrompts.worker, /delegate_task/);
   assert.match(rolePrompts.discoverer, /never delegate execution/);
   assert.match(rolePrompts.worker, /Verify your work/);

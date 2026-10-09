@@ -38,6 +38,70 @@ test('sequential direct execution preserves all text and skips checked/fenced it
   assert.ok(s.calls.every(c => !c.context.includes('report')));
 });
 
+test('successful items retain ordered task metadata and every executor session and log', async t => {
+  const text = '- [X] done\n- [ ] first\n```md\n- [ ] example\n```\n- [x] also done\n- [ ] second\n';
+  const artifacts = [1, 2].map(n => ({
+    sessionIds: { worker: `worker-${n}`, reviewer: `reviewer-${n}`, extra: `extra-${n}` },
+    logs: { worker: `/logs/worker-${n}`, reviewer: `/logs/reviewer-${n}`, extra: `/logs/extra-${n}` },
+  }));
+  const s = setup(t, text, n => ({
+    isError: false,
+    details: { approved: true, ...artifacts[n - 1] },
+  }));
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, 2);
+  assert.deepEqual(result.details.items, [
+    { taskNumber: 2, task: 'first', completed: true, ...artifacts[0] },
+    { taskNumber: 4, task: 'second', completed: true, ...artifacts[1] },
+  ]);
+});
+
+test('successful output associates task numbers and completion status with every executor session and log', async t => {
+  const artifacts = [1, 2].map(n => ({
+    sessionIds: { worker: `worker-${n}`, reviewer: `reviewer-${n}`, extra: `extra-${n}` },
+    logs: { worker: `/logs/worker-${n}`, reviewer: `/logs/reviewer-${n}`, extra: `/logs/extra-${n}` },
+  }));
+  const s = setup(t, '- [X] done\n- [ ] first\n- [x] also done\n- [ ] second\n', n => ({
+    isError: false,
+    details: { approved: true, ...artifacts[n - 1] },
+  }));
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.equal(result.content[0].type, 'text');
+  assert.equal(result.content[0].text, [
+    'delegate-list: 2 item(s) completed.',
+    'Task 2 [completed]: first',
+    '  worker session ID: worker-1',
+    '  reviewer session ID: reviewer-1',
+    '  extra session ID: extra-1',
+    '  worker transcript log: /logs/worker-1',
+    '  reviewer transcript log: /logs/reviewer-1',
+    '  extra transcript log: /logs/extra-1',
+    'Task 4 [completed]: second',
+    '  worker session ID: worker-2',
+    '  reviewer session ID: reviewer-2',
+    '  extra session ID: extra-2',
+    '  worker transcript log: /logs/worker-2',
+    '  reviewer transcript log: /logs/reviewer-2',
+    '  extra transcript log: /logs/extra-2',
+  ].join('\n'));
+});
+
+test('legacy successful items default session and log maps while preserving ordered task metadata', async t => {
+  const s = setup(t, '- [X] done\n- [ ] first\n- [x] also done\n- [ ] second\n', () => ({
+    isError: false,
+    details: { approved: true },
+  }));
+  const result = await s.runnerRun();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, 2);
+  assert.deepEqual(result.details.items, [
+    { taskNumber: 2, task: 'first', completed: true, sessionIds: {}, logs: {} },
+    { taskNumber: 4, task: 'second', completed: true, sessionIds: {}, logs: {} },
+  ]);
+});
+
 for (const kind of ['failure', 'throw', 'cancel']) test(`stops on ${kind} leaving later tasks unchecked`, async t => {
   const s = setup(t, '- [ ] one\n- [ ] two\n- [ ] three\n', n => {
     if (n === 1) return pass;
@@ -236,4 +300,44 @@ for (const details of [
   assert.equal(result.details.completed, 2);
   assert.ok(s.calls.every(call => call.review === true && call.mode === 'execute'));
   assert.equal(readFileSync(s.path, 'utf8'), '- [x] first\n- [x] later\n');
+});
+
+test('later failed executor result preserves ordered attempts and artifacts in stopped output', async t => {
+  const text = '- [X] done\n- [ ] first\n- [x] also done\n- [ ] second\n- [ ] later\n';
+  const artifacts = [1, 2].map(n => ({
+    sessionIds: { worker: `worker-${n}`, reviewer: `reviewer-${n}`, extra: `extra-${n}` },
+    logs: { worker: `/logs/worker-${n}`, reviewer: `/logs/reviewer-${n}`, extra: `/logs/extra-${n}` },
+  }));
+  const s = setup(t, text, n => ({
+    isError: n !== 1,
+    details: { approved: n === 1, ...artifacts[n - 1] },
+    content: [{ type: 'text', text: n === 1 ? 'approved' : 'review failed' }],
+  }));
+  const result = await s.runnerRun();
+  assert.equal(result.isError, true);
+  assert.equal(result.details.completed, 1);
+  assert.deepEqual(result.details.items, [
+    { taskNumber: 2, task: 'first', completed: true, ...artifacts[0] },
+    { taskNumber: 4, task: 'second', completed: false, ...artifacts[1] },
+  ]);
+  assert.deepEqual(s.calls.map(c => [c.taskNumber, c.task]), [[2, 'first'], [4, 'second']]);
+  assert.equal(readFileSync(s.path, 'utf8'), text.replace('[ ] first', '[x] first'));
+  assert.equal(result.content[0].type, 'text');
+  assert.equal(result.content[0].text, [
+    'delegate-list stopped after 1 item(s): review failed',
+    'Task 2 [completed]: first',
+    '  worker session ID: worker-1',
+    '  reviewer session ID: reviewer-1',
+    '  extra session ID: extra-1',
+    '  worker transcript log: /logs/worker-1',
+    '  reviewer transcript log: /logs/reviewer-1',
+    '  extra transcript log: /logs/extra-1',
+    'Task 4 [not completed]: second',
+    '  worker session ID: worker-2',
+    '  reviewer session ID: reviewer-2',
+    '  extra session ID: extra-2',
+    '  worker transcript log: /logs/worker-2',
+    '  reviewer transcript log: /logs/reviewer-2',
+    '  extra transcript log: /logs/extra-2',
+  ].join('\n'));
 });

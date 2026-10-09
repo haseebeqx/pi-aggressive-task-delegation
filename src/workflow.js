@@ -37,18 +37,23 @@ export function createDelegator(runAgent, { discoveryOnly = false } = {}) {
       let worker;
       let review;
       const logs = {};
+      const sessionIds = {};
       const logText = () => Object.entries(logs)
-        .map(([role, path]) => `\n${role} transcript log: ${path}`).join('');
+        .map(([role, path]) => `\n${role} transcript log: ${path}`).join('')
+        + Object.entries(sessionIds)
+          .map(([role, id]) => `\n${role} session ID: ${id}`).join('');
       // approved is the legacy success gate, not evidence of independent approval.
       const details = (approved) => ({ approved,
         ...(mode === 'execute' ? { completed: approved, reviewStatus,
           independentApproved: reviewStatus === 'passed' } : {}),
-        ...(Object.keys(logs).length ? { logs: { ...logs } } : {}) });
+        ...(Object.keys(logs).length ? { logs: { ...logs } } : {}),
+        ...(Object.keys(sessionIds).length ? { sessionIds: { ...sessionIds } } : {}) });
       try {
         onProgress?.(mode === 'discover' ? 'Discovering' : 'Working');
         worker = await runAgent(workerRole, assignment, signal, request.ctx);
         addUsage(usage, worker.usage);
         if (worker.logPath) logs[workerRole] = worker.logPath;
+        if (worker.sessionId) sessionIds[workerRole] = worker.sessionId;
         signal?.throwIfAborted();
         if (mode === 'discover') return {
           content: [{ type: 'text', text: `Discovery findings:\n${worker.report}${logText()}` }],
@@ -70,6 +75,7 @@ Independent review skipped (review:false). Worker completion only; no independen
         review = await runAgent('reviewer', `${assignment}\n\nWorker report (verify independently):\n${worker.report}`, signal, request.ctx);
         addUsage(usage, review.usage);
         if (review.logPath) logs.reviewer = review.logPath;
+        if (review.sessionId) sessionIds.reviewer = review.sessionId;
         signal?.throwIfAborted();
         const approved = /^PASS(?:\r?\n|$)/.test(review.report.trim());
         reviewStatus = approved ? 'passed' : 'failed';
@@ -80,6 +86,7 @@ Independent review skipped (review:false). Worker completion only; no independen
       } catch (error) {
         addUsage(usage, error.usage);
         if (error.logPath) logs[reviewing ? 'reviewer' : workerRole] = error.logPath;
+        if (error.sessionId) sessionIds[reviewing ? 'reviewer' : workerRole] = error.sessionId;
         return {
           content: [{ type: 'text', text: `Delegation failed: ${error.message}${worker ? `\n\nCompleted worker report:\n${worker.report}` : ''}${logText()}` }],
           details: details(false), usage, isError: true,
