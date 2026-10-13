@@ -147,3 +147,24 @@ for (const mode of ['print', 'json', 'rpc']) {
   assert.equal(f.calls, 0);
   assert.ok(f.commands['delegate-list-run']);
 });
+
+
+for (const mode of ['print', 'json', 'rpc']) test(`${mode} shell output uses launcher stderr sink without AI execution`, async t => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { runDelegateList } = await import('../src/delegate-list.js');
+  const cwd = mkdtempSync(join(tmpdir(), 'cli-shell-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  writeFileSync(join(cwd, 'tasks.md'), '!printf output; printf error >&2\n');
+  const f = fixture('tasks.md', { runList: runDelegateList,
+    createExecutor: () => ({ execute: () => { throw new Error('shell must not delegate'); } }),
+  }, mode);
+  f.ctx.cwd = cwd;
+  await f.start();
+  assert.ok(f.output.includes('output'));
+  assert.ok(f.output.includes('error'));
+  assert.ok(f.output.some(text => text.includes('Shell [completed]')));
+  assert.equal(f.host.exitCode, undefined);
+  assert.deepEqual(f.messages, []);
+});

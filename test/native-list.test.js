@@ -45,7 +45,7 @@ function fixture(t, onPrompt = () => {}, veto = false) {
     contexts.push(ctx);
     return ctx;
   }
-  return { path, host, prompts, statuses, notifications, ctx: context(), get switches() { return switches; }, get aborts() { return aborts; } };
+  return { path, host, prompts, statuses, notifications, ctx: context(), get input() { return input; }, get switches() { return switches; }, get aborts() { return aborts; } };
 }
 
 test('fresh native contexts submit normal supervisor prompts sequentially and preserve appended items', async t => {
@@ -219,4 +219,35 @@ for (const failure of ['error', 'throw', 'cancel']) test(`native ${failure} reta
   assert.match(f.notifications.at(-1).text, /failed-worker/);
   assert.match(f.notifications.at(-1).text, /\/logs\/failed/);
   assert.match(readFileSync(f.path, 'utf8'), /^- \[ \] first/);
+});
+
+
+test('native shell setup and teardown print without replacing sessions or prompting models', async t => {
+  const f = fixture(t, ({ path }) => {
+    assert.equal(readFileSync(join(f.ctx.cwd, 'state'), 'utf8'), 'setup');
+  });
+  writeFileSync(f.path, '!printf setup > state; printf ready\n- [ ] work\n!printf teardown >> state\n');
+  const result = await runNativeList(f.path, f.ctx, { host: f.host });
+  assert.equal(result.isError, false);
+  assert.equal(f.switches, 1);
+  assert.equal(f.prompts.length, 1);
+  assert.equal(result.details.commands.length, 2);
+  assert.ok(f.notifications.some(n => n.text === 'ready'));
+  assert.equal(readFileSync(join(f.ctx.cwd, 'state'), 'utf8'), 'setupteardown');
+});
+
+for (const key of ['\x03', '\x1b[27;5;27~']) test(`native shell before first task is cancellable (${JSON.stringify(key)})`, async t => {
+  const f = fixture(t);
+  writeFileSync(f.path, '!printf started; sleep 30\n- [ ] work');
+  const notify = f.ctx.ui.notify;
+  f.ctx.ui.notify = (text, level) => {
+    notify(text, level);
+    if (text === 'started') assert.deepEqual(f.input(key), { consume: true });
+  };
+  const result = await runNativeList(f.path, f.ctx, { host: f.host });
+  assert.equal(result.isError, true);
+  assert.equal(f.host.exitCode, 130);
+  assert.equal(f.switches, 0);
+  assert.equal(f.prompts.length, 0);
+  assert.equal(f.input, undefined);
 });

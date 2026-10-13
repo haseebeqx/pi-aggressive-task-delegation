@@ -15,6 +15,12 @@ export async function runNativeList(path, ctx, { runList = runDelegateList, host
     controller.abort(new Error('Cancelled by user.'));
     try { current.abort(); } catch { /* replacement or shutdown invalidated it */ }
   };
+  const attachInput = () => current.ui.onTerminalInput(data => {
+    if (matchesKey(data, 'ctrl+c') || parseKey(data) === 'ctrl+escape') {
+      cancel();
+      return { consume: true };
+    }
+  });
   const shutdown = (event) => {
     if (!(switching && event.reason === 'new')) cancel();
   };
@@ -23,7 +29,9 @@ export async function runNativeList(path, ctx, { runList = runDelegateList, host
   let result;
   try {
     current.ui.notify(`delegate-list: ${path}`, 'info');
+    removeInput = attachInput();
     result = await runList(path, { cwd, signal: controller.signal,
+      onCommandOutput: ({ text }) => current.ui.notify(text, 'info'),
       execute: async (params) => {
         const sessionIds = {}, logs = {};
         let taskContext;
@@ -42,12 +50,7 @@ export async function runNativeList(path, ctx, { runList = runDelegateList, host
               if (sessionId) sessionIds.supervisor = sessionId;
               controller.signal.throwIfAborted();
               fresh.ui.setStatus('delegate-list', `delegated task #${params.taskNumber}`);
-              removeInput = fresh.ui.onTerminalInput(data => {
-                if (matchesKey(data, 'ctrl+c') || parseKey(data) === 'ctrl+escape') {
-                  cancel();
-                  return { consume: true };
-                }
-              });
+              removeInput = attachInput();
             } });
           } finally { switching = false; }
           if (replacement.cancelled) throw new Error('New session cancelled.');

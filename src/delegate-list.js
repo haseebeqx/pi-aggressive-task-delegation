@@ -1,9 +1,10 @@
+import { runListCommand } from './list-command.js';
 import { emptyUsage, addUsage } from './workflow.js';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // Intentionally line-based: each checkbox is one self-contained assignment.
-function checkboxTasks(text) {
+function listEntries(text) {
   const tasks = [];
   let offset = 0;
   let taskNumber = 0;
@@ -14,6 +15,12 @@ function checkboxTasks(text) {
       if (!fence) fence = marker[1];
       else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = undefined;
     } else if (!fence) {
+      const command = /^!(.*)/.exec(line);
+      if (command) {
+        const text = command[1].replace(/\r$/, '');
+        if (!text.trim()) throw new Error('Shell commands must have non-empty text.');
+        tasks.push({ kind: 'command', command: text, text, offset });
+      }
       const match = /^(\s*(?:[-+*]|\d+[.)])\s+\[)([ xX])(\]\s+)(.*)/.exec(line);
       if (match) {
         taskNumber++;
@@ -32,6 +39,10 @@ function checkboxTasks(text) {
 
 // Keep the public parser's original shape. Identity matching includes checked
 // items too: an unchecked duplicate must not borrow a completed item's approval.
+function checkboxTasks(text) {
+  return listEntries(text).filter(item => item.kind !== 'command');
+}
+
 export function uncheckedTasks(text) {
   return checkboxTasks(text).filter(item => !item.checked)
     .map(({ task, offset, taskNumber }) => ({ task, offset, taskNumber }));
@@ -47,7 +58,7 @@ function approvedItem(before, after, original, previousItems, latestItems) {
   return previous.length === 1 && latest.length === 1 ? latest[0] : undefined;
 }
 
-const outcome = (completed, error, usage, items = []) => {
+const outcome = (completed, error, usage, items = [], commands = []) => {
   const summary = error
     ? `delegate-list stopped after ${completed} item(s): ${error}`
     : `delegate-list: ${completed} item(s) completed.`;
@@ -61,9 +72,12 @@ const outcome = (completed, error, usage, items = []) => {
       if (log) lines.push(`  ${role} transcript log: ${log}`);
     }
   }
+  for (const command of commands) {
+    lines.push(`Shell [${command.completed ? 'completed' : 'not completed'}]: !${command.command}${command.exitCode != null ? ` (exit ${command.exitCode})` : ''}`);
+  }
   return {
     content: [{ type: 'text', text: lines.join('\n') }],
-    details: { completed, items }, isError: Boolean(error), usage,
+    details: { completed, items, ...(commands.length ? { commands } : {}) }, isError: Boolean(error), usage,
   };
 };
 
@@ -73,12 +87,15 @@ const activePaths = new Set();
  * return a reviewed tool result with details.approved === true on success.
  * Paths are literal (no shell quotes or @ references). Concurrent runs of the
  * same resolved path are rejected; independent files may run concurrently. */
-export async function runDelegateList(name, { cwd = process.cwd(), execute, signal } = {}) {
+export async function runDelegateList(name, { cwd = process.cwd(), execute, signal, onCommandOutput = ({ text }) => process.stderr.write(text) } = {}) {
   const key = typeof name === 'string' && name.trim() ? resolve(cwd, name) : undefined;
   if (activePaths.has(key)) return outcome(0, 'A delegate-list run is already active.');
   activePaths.add(key);
   let completed = 0;
   const items = [];
+  const commands = [];
+  let snapshot;
+  let consumed = [];
   const usage = emptyUsage();
   try {
     signal?.throwIfAborted();
@@ -90,9 +107,38 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
     while (true) {
       signal?.throwIfAborted();
       const before = readFileSync(path, 'utf8');
-      const previousItems = checkboxTasks(before);
-      const item = previousItems.find(item => !item.checked);
+      const entries = listEntries(before);
+      const shellItems = entries.filter(item => item.kind === 'command');
+      if (snapshot !== undefined && snapshot !== before) {
+        const oldShellItems = listEntries(snapshot).filter(item => item.kind === 'command');
+        consumed = consumed.flatMap(original => {
+          const old = oldShellItems.filter(item => item.text === original.text);
+          const latest = shellItems.filter(item => item.text === original.text);
+          if (!latest.length) return [];
+          if (old.length !== 1 || latest.length !== 1) {
+            throw new Error('Consumed shell command identity is ambiguous after a live edit. Stop and rerun with distinct command lines.');
+          }
+          return latest;
+        });
+      }
+      snapshot = before;
+      const previousItems = entries.filter(item => item.kind !== 'command');
+      const item = entries.find(item => item.kind === 'command'
+        ? !consumed.some(done => done.offset === item.offset) : !item.checked);
       if (!item) break;
+      if (item.kind === 'command') {
+        const attempt = { command: item.command, completed: false };
+        commands.push(attempt);
+        onCommandOutput({ command: item.command, stream: 'label', text: `delegate-list shell: !${item.command}\n` });
+        const result = await runListCommand(item.command, { cwd, signal, onOutput: (stream, text) =>
+          onCommandOutput({ command: item.command, stream, text }) });
+        Object.assign(attempt, result);
+        signal?.throwIfAborted();
+        if (result.exitCode !== 0) throw new Error(`Shell command failed: !${item.command} (${result.exitCode == null ? result.signal : `exit ${result.exitCode}`})`);
+        attempt.completed = true;
+        consumed.push(item);
+        continue;
+      }
       const attempt = {
         taskNumber: item.taskNumber, task: item.task, completed: false,
         sessionIds: {}, logs: {},
@@ -116,13 +162,16 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
       // executes the latest unchecked task (including revised text) again.
       if (!current) continue;
       if (!current.checked) {
-        writeFileSync(path, latest.slice(0, current.offset) + 'x' + latest.slice(current.offset + 1), 'utf8');
+        const updated = latest.slice(0, current.offset) + 'x' + latest.slice(current.offset + 1);
+        writeFileSync(path, updated, 'utf8');
+        // Our own checkbox write preserves offsets and command identity.
+        if (snapshot === latest) snapshot = updated;
       }
       attempt.completed = true;
       completed++;
     }
-    return outcome(completed, undefined, usage, items);
+    return outcome(completed, undefined, usage, items, commands);
   } catch (error) {
-    return outcome(completed, String(error?.message ?? error).slice(0, 1000), usage, items);
+    return outcome(completed, String(error?.message ?? error).slice(0, 1000), usage, items, commands);
   } finally { activePaths.delete(key); }
 }

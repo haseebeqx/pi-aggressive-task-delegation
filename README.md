@@ -190,6 +190,64 @@ absolute path. Tasks are independent/unrelated; each must be self-contained on o
 - [ ] Fix date formatting in src/calendar.js and test timezone handling
 ```
 
+### Shell setup and teardown
+
+Plain lines starting with `!` in column one execute the remaining text as a shell
+command, sequentially among checkbox tasks, in **Pi's working directory** (not
+necessarily the task file's directory). No bullet or dot is needed:
+
+```markdown
+!start-server
+- [ ] Test the signup page against the running server and fix validation
+!stop-server
+```
+
+Commands are not model assignments, do not start sessions, and never go through
+AI review. The existing checkbox review rules still apply. Only column-one `!`
+lines outside fenced code blocks run; `- [ ] !something` is still an AI task.
+Empty command lines are rejected before work starts.
+
+A foreground command must exit before the next entry starts. For a long-running
+server, background it and redirect **all standard streams**, save its PID, and
+wait for readiness in the setup command. For example, on POSIX shells:
+
+```markdown
+!npm run dev </dev/null >.delegate-server.log 2>&1 & echo $! >.delegate-server.pid
+!n=0; until curl -fsS http://localhost:3000/ >/dev/null; do n=$((n+1)); [ "$n" -lt 30 ] || exit 1; sleep 1; done
+- [ ] Verify and fix signup validation using http://localhost:3000
+!kill "$(cat .delegate-server.pid)" && rm .delegate-server.pid
+```
+
+Use a server-specific stop command if its launcher spawns subprocesses; killing
+an npm launcher PID may not stop its server. Each line gets a new shell (`/bin/sh`
+on POSIX, the default Node shell on Windows), inherited environment, and closed
+stdin. `cd`/`export` do not carry over to other lines; use files or combine operations
+on one line. `&` alone is insufficient if background processes keep output pipes open.
+
+Stdout and stderr stream to TUI notifications or the non-interactive stderr sink
+(including JSON/RPC; stdout stays protocol-only). Command labels and exit statuses
+appear in the final summary; command output is not passed to models or stored in
+AI transcript logs. Output may contain secrets. There is no output buffer or timeout.
+A nonzero exit, spawn failure, or cancellation stops the list immediately: later
+commands, **including teardown**, do not run. There is no rollback or automatic
+cleanup; stop background services manually after failure. Cancellation sends TERM
+then, if still running after one second, KILL to the foreground process group on
+POSIX (the direct shell on Windows); detached services are your responsibility.
+
+Command consumption is **in memory for this run only**; shell lines are never
+modified. Every new invocation reruns all commands, even around already-checked
+tasks. Make setup/teardown idempotent. Within a run, unchanged duplicate command
+lines each execute once. Live edits are reread before choosing the next entry:
+unique unchanged consumed commands follow shifts/reordering; new or revised lines
+run in current source order. Deleted consumed lines lose their identity. If an
+external edit makes a consumed duplicate ambiguous, the list stops rather than
+risk rerunning side effects or skipping a new command. Use distinct command text
+for live-editable lists. Checkbox identity/persistence rules below are unchanged.
+
+**Trusted shell input only:** running a list executes its `!` lines directly with
+your OS permissions, without confirmation, model review, sandboxing, or Pi tool
+permission hooks. Trust the entire file and anyone who can edit it while running.
+
 Bullets (`-`, `+`, `*`) and numbered items (`1.` or `1)`) are supported; checked
 items (`[x]` or `[X]`) and fenced code examples are skipped. The footer's `#n` is
 the checkbox item's position, including already checked items, not the number
@@ -216,7 +274,7 @@ approval unmarked rather than checking an unrelated occurrence, then executes th
 latest unchecked items afresh. Unchanged duplicate lists are processed normally.
 Use distinct self-contained task descriptions to avoid redundant execution.
 
-The runner finishes as soon as a fresh read finds no unchecked tasks; it does not
+The runner finishes as soon as a fresh read finds no unchecked tasks or unconsumed commands; it does not
 wait for future additions. Additions after that completion cutoff require another
 run. File updates are not protected by filesystem locking: an external write
 between the runner's read and checkbox write could be lost. Avoid concurrent writes

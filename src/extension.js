@@ -8,7 +8,7 @@ export function registerCli(pi, {
   runList = runDelegateList, createExecutor = createStandaloneExecutor,
   host = process, write = (text) => process.stderr.write(`${text}\n`),
 } = {}) {
-  pi.registerFlag('delegate-list', { type: 'string', description: 'Execute unchecked Markdown tasks in fresh Pi sessions.' });
+  pi.registerFlag('delegate-list', { type: 'string', description: 'Execute Markdown checkbox tasks and !shell commands sequentially.' });
   pi.registerCommand('delegate-list-run', {
     description: 'Run the startup Markdown list in native Pi sessions.',
     handler: async (_args, ctx) => {
@@ -72,6 +72,7 @@ export function registerCli(pi, {
       const { execute } = createExecutor({ cwd: ctx.cwd, model: ctx.model,
         thinkingLevel: ctx.thinkingLevel, signal: activeController.signal, onOutput });
       result = await runList(path, { cwd: ctx.cwd, signal: activeController.signal,
+        onCommandOutput: ({ text }) => { if (!cleaned) write(text); },
         execute: (params, signal) => {
           return execute(params, signal);
         } });

@@ -428,3 +428,129 @@ test('later failed executor result preserves ordered attempts and artifacts in s
     '  extra transcript log: /logs/extra-2',
   ].join('\n'));
 });
+
+test('shell setup, reviewed task, and teardown run in cwd in order without model/reviewer commands', async t => {
+  const text = '!printf setup > state\r\n- [ ] work\r\n!printf teardown >> state\r\n';
+  const s = setup(t, text, (_n, path) => {
+    assert.equal(readFileSync(join(s.ctx.cwd, 'state'), 'utf8'), 'setup');
+    return pass;
+  });
+  const output = [];
+  const result = await runDelegateList(s.path, { cwd: s.ctx.cwd, execute: async params => {
+    s.calls.push(params);
+    assert.equal(readFileSync(join(s.ctx.cwd, 'state'), 'utf8'), 'setup');
+    return pass;
+  }, onCommandOutput: event => output.push(event) });
+  assert.equal(result.isError, false);
+  assert.equal(result.details.completed, 1);
+  assert.equal(result.details.commands.length, 2);
+  assert.ok(result.details.commands.every(c => c.completed && c.exitCode === 0));
+  assert.equal(s.calls.length, 1);
+  assert.equal(s.calls[0].review, true);
+  assert.equal(readFileSync(join(s.ctx.cwd, 'state'), 'utf8'), 'setupteardown');
+  assert.equal(readFileSync(s.path, 'utf8'), text.replace('[ ]', '[x]'));
+  assert.equal(output.length, 2);
+});
+
+test('shell stdout and stderr stream; duplicates consume once each per run, including checked-only lists', async t => {
+  const s = setup(t, '!printf out; printf err >&2\n!printf out; printf err >&2\n- [x] done\n');
+  for (let n = 0; n < 2; n++) {
+    const output = [];
+    const result = await runDelegateList(s.path, { cwd: s.ctx.cwd, execute: () => { throw new Error('no AI'); },
+      onCommandOutput: event => output.push(event) });
+    assert.equal(result.isError, false);
+    assert.equal(result.details.commands.length, 2);
+    assert.equal(output.filter(e => e.stream === 'stdout').map(e => e.text).join(''), 'outout');
+    assert.equal(output.filter(e => e.stream === 'stderr').map(e => e.text).join(''), 'errerr');
+  }
+});
+
+test('only column-one bang lines outside fences are commands; empty commands reject before execution', async t => {
+  const s = setup(t, '```sh\n!exit 99\n```\n  !exit 99\n- !exit 99\n!printf ok\n');
+  const result = await runDelegateList(s.path, { execute: () => pass, onCommandOutput: () => {} });
+  assert.equal(result.isError, false);
+  assert.equal(result.details.commands.length, 1);
+  assert.deepEqual(uncheckedTasks('!echo hi\n- [ ] !regular assignment'), [{ task: '!regular assignment', offset: 12, taskNumber: 1 }]);
+  writeFileSync(s.path, '!touch should-not-exist\n!   \n- [ ] work');
+  const rejected = await s.run();
+  assert.equal(rejected.isError, true);
+  assert.equal(s.calls.length, 0);
+});
+
+test('nonzero command stops before task and teardown without changing source', async t => {
+  const text = '!printf failure >&2; exit 7\n- [ ] work\n!touch teardown';
+  const s = setup(t, text);
+  const output = [];
+  const result = await runDelegateList(s.path, { cwd: s.ctx.cwd, execute: () => { throw new Error('no AI'); },
+    onCommandOutput: event => output.push(event) });
+  assert.equal(result.isError, true);
+  assert.equal(result.details.commands[0].exitCode, 7);
+  assert.equal(result.details.commands[0].completed, false);
+  assert.match(result.content[0].text, /exit 7/);
+  assert.equal(readFileSync(s.path, 'utf8'), text);
+  assert.equal(output.filter(e => e.stream === 'stderr').map(e => e.text).join(''), 'failure');
+});
+
+test('command cancellation terminates foreground work and prevents task and teardown', async t => {
+  const s = setup(t, '!printf started; sleep 30\n- [ ] work\n!touch teardown');
+  const controller = new AbortController();
+  const result = await runDelegateList(s.path, { cwd: s.ctx.cwd, execute: () => { throw new Error('no AI'); },
+    signal: controller.signal, onCommandOutput: event => {
+      if (event.stream === 'stdout') controller.abort(new Error('cancel command'));
+    } });
+  assert.equal(result.isError, true);
+  assert.equal(result.details.commands[0].completed, false);
+  assert.match(result.content[0].text, /cancel command/);
+});
+
+test('consumed unique commands follow shifts; live insertions and revisions run in source order', async t => {
+  const s = setup(t, '!printf setup >> state\n- [ ] work\n!printf old >> state\n', (_n, path) => {
+    writeFileSync(path, '# moved\n!printf setup >> state\n!printf inserted >> state\n- [ ] work\n!printf revised >> state\n');
+    return pass;
+  });
+  const result = await s.run();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.commands.length, 3);
+  assert.equal(s.calls.length, 1);
+  assert.equal(readFileSync(join(s.ctx.cwd, 'state'), 'utf8'), 'setupinsertedrevised');
+});
+
+test('own checkbox writes do not repeat duplicate commands; external ambiguous edits stop safely', async t => {
+  const s = setup(t, '!true\n- [ ] work\n!true\n');
+  assert.equal((await s.run()).details.commands.length, 2);
+  writeFileSync(s.path, '!true\n- [ ] changed\n!true\n');
+  const result = await runDelegateList(s.path, { execute: () => {
+    writeFileSync(s.path, '# shift\n!true\n- [ ] changed\n!true\n');
+    return pass;
+  }, onCommandOutput: () => {} });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /ambiguous/);
+  assert.equal(result.details.commands.length, 1);
+});
+
+test('failed mandatory AI review skips shell teardown and preserves unchecked task', async t => {
+  const s = setup(t, '!true\n- [ ] work\n!exit 99\n', () => ({ isError: true,
+    details: { approved: false, independentApproved: false, reviewStatus: 'failed' } }));
+  const result = await s.run();
+  assert.equal(result.isError, true);
+  assert.equal(result.details.commands.length, 1);
+  assert.equal(s.calls.length, 1);
+  assert.equal(s.calls[0].review, true);
+  assert.match(readFileSync(s.path, 'utf8'), /\[ \] work/);
+});
+
+test('background command with redirected streams lets task proceed and teardown stops service', async t => {
+  if (process.platform === 'win32') return t.skip('POSIX background shell syntax');
+  const s = setup(t, '!sleep 30 </dev/null >service.log 2>&1 & echo $! >service.pid\n- [ ] work\n!kill "$(cat service.pid)"\n', () => {
+    const pid = Number(readFileSync(join(s.ctx.cwd, 'service.pid'), 'utf8'));
+    process.kill(pid, 0);
+    return pass;
+  });
+  t.after(() => {
+    try { process.kill(Number(readFileSync(join(s.ctx.cwd, 'service.pid'), 'utf8')), 'SIGKILL'); } catch { /* stopped or fixture removed */ }
+  });
+  const result = await s.run();
+  assert.equal(result.isError, false);
+  assert.equal(result.details.commands.length, 2);
+  assert.equal(s.calls.length, 1);
+});
