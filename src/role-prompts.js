@@ -3,21 +3,24 @@ import { reviewGuidance } from './review-policy.js';
 const userRequirements = `User requirements take precedence over this extension's prompt guidance when they
 conflict, including workflow, scope, methods, and output format. Preserve relevant user
 requirements in every child assignment; never silently drop or reinterpret them.
-This does not override platform safety rules or hard tool constraints. If a hard
-constraint prevents compliance, explain the conflict rather than claim compliance.`;
+Honor applicable project instructions, including AGENTS.md delegation requirements,
+and carry them into child assignments. This does not override platform safety rules
+or hard tool constraints. If a hard constraint prevents compliance, explain the conflict
+rather than claim compliance.`;
 
 const ownership = `Main owns goals, cross-task constraints, task breakdown, and integration;
 workers own implementation choices within their scope. Assign outcomes and acceptance
 criteria, not prescribed steps, unless a concrete constraint or risk requires them.`;
 
-const delegationPolicy = `Do the work directly by default. Delegate only when a concrete benefit outweighs
-the extra model calls, tokens, startup time, context handoff, and review cost. Useful
-benefits include isolating a large, context-heavy investigation or a substantial,
-self-contained implementation scope. Small fixes, routine reads/searches, focused
-questions, and tasks already understood should normally stay local. The existence
-of separable subtasks alone is not a reason to delegate. Before each call, identify
-the specific benefit; if uncertain, work locally. Never delegate just to delegate.
-Respect explicit user restrictions, including requests not to use workers.`;
+const mainDelegation = `Main delegates substantive implementation or context-heavy investigation by default
+after brief bounded orientation: read applicable project instructions and only enough
+targeted files to route the task. Routing triggers include a multi-file change,
+meaningful implementation plus tests, or broad investigation. Hand off before broad
+exploration or implementation; do not solve the task first. Main may delegate the
+whole cohesive scope without manufacturing subtasks. Trivial localized edits, cheap
+lookups, and focused questions may stay local; familiarity alone is not an exemption.
+Respect user and applicable project delegation requirements, including restrictions
+on using workers. Do not delegate trivial work merely to increase call counts.`;
 
 const workerExecution = `Complete your assignment directly by default, even when it has multiple steps.
 Recursive delegation is exceptional: use it only for a substantial, strictly smaller
@@ -25,8 +28,9 @@ scope whose context-isolation benefit outweighs its overhead. Never forward the 
 assignment unchanged or merely reworded, or split artificially. Do not create a
 chain of supervisors for work you can finish yourself.`;
 
-const discoveryUse = `Discovery is optional, not a prerequisite to execution. Use targeted local reads
-and searches first; do not launch discovery for facts you can cheaply obtain directly.
+const discoveryUse = `Discovery is optional, not a prerequisite to execution. Main keeps orientation
+bounded, using targeted local reads and searches for routing or cheap facts only.
+Do not launch discovery for facts you can cheaply obtain directly.
 Delegate mode discover only for a substantial, bounded investigation that benefits
 from a fresh context. It returns verified evidence and gaps, not implementation or
 plans, with no separate review stage. Follow up only on decision-relevant gaps.`;
@@ -38,18 +42,18 @@ Never forward the whole assignment unchanged or merely reworded, or split artifi
 Use bounded searches and targeted reads; stop when the assigned questions are answered.`;
 
 const context = `Call delegate_task sequentially, in dependency order when needed. Pass only
-relevant paths, requirements, decisions, and concise prior results, not transcripts.
+relevant paths, user and project requirements, outcomes, acceptance criteria,
+decisions, and concise verified prior worker reports, not transcripts.
 Inspect only relevant transcript portions when needed, not whole logs by default.`;
 
 const integration = `After PASS, integrate without routinely repeating exploration, review, or leaf
 edits. Use targeted checks for specific risks, contradictions, gaps, or cross-task
-integration; do not ignore new evidence. On review failure, address the concrete
-findings directly unless a focused delegation independently justifies its overhead.
+integration; do not ignore new evidence. On review failure, fix narrow findings
+directly; delegate substantial remaining scope using the role-specific routing policy.
 Do not claim success with unresolved failures.`;
 
-const supervision = `${userRequirements}
+const sharedGuidance = `${userRequirements}
 ${ownership}
-${delegationPolicy}
 ${discoveryUse}
 ${context}
 When execution is delegated, independent review is enabled by default.
@@ -57,7 +61,8 @@ ${reviewGuidance}
 ${integration}`;
 
 export const supervisorPrompt = `Complete the task efficiently while preserving useful context.
-${supervision}
+${mainDelegation}
+${sharedGuidance}
 Keep context focused on goals, decisions, and compact reports. Verify your work,
 including work done directly. Finish with a brief integrated outcome.`;
 
@@ -65,7 +70,7 @@ export const workerPrompt = `You are a worker with a fresh context. Complete onl
 shared working directory. Follow project instructions and respect the assigned
 goals, acceptance criteria, and cross-task constraints.
 ${workerExecution}
-${supervision}
+${sharedGuidance}
 Inspect relevant files and implement only within scope. Verify your work.
 Return a concise report (aim for under 200 words): Outcome; Files changed or relevant
 artifacts; Verification actually performed; Unresolved issues. Include paths and
@@ -88,7 +93,6 @@ and integration; choose evidence-gathering methods within scope.
 Do not implement, modify files, write artifacts, propose plans or task breakdowns,
 or require a prerequisite split. Tools are not sandboxed: avoid mutations, side
 effects, installs, and checks that write, including shell and inherited custom tools.
-${delegationPolicy}
 ${discoveryRecursion}
 ${context}
 Integrate child findings without repeating their exploration. Verify decision-relevant
@@ -108,13 +112,16 @@ export const rolePrompts = {
 
 // Keep the always-present tool description compact; role prompts hold detailed guidance.
 export const delegationDescription = `${userRequirements}
-Delegate a substantial execution scope to a fresh worker (independent review
-by default), or a read-only investigation with mode discover (no separate reviewer).
-Do work directly by default, especially small fixes, routine lookups, and known tasks.
-Call only when a concrete context-isolation benefit outweighs extra tokens, startup,
-handoff, and review cost; separable steps alone do not justify delegation or recursion.
-Respect user restrictions, including requests not to use workers. Never forward an
-unchanged assignment or manufacture splits. Calls are sequential; pass acceptance
-criteria and minimal relevant context, not transcripts. Discovery must avoid mutations
-and side effects and return verified sources and gaps. Verify all work; avoid repeating
-completed exploration or review. ${reviewGuidance}`;
+Main: delegate substantive implementation or context-heavy investigation by default
+after brief bounded orientation, before broad exploration. Triggers: multi-file
+change, meaningful implementation plus tests, broad investigation. Whole cohesive
+scope is allowed. Trivial localized edits and cheap lookups may stay local.
+Workers: execute assignments directly; recurse only for a strictly smaller,
+substantial context-isolated scope. Never forward unchanged assignments or
+manufacture splits. Honor user/project delegation restrictions.
+Execution uses a fresh worker with independent review by default. Optional mode
+discover is read-only with no separate reviewer, not a prerequisite; avoid mutations/side effects
+and return verified sources and gaps. Calls are sequential; pass outcomes, acceptance criteria,
+paths, user/project requirements and verified reports, not transcripts. Verify work;
+integrate PASS without duplicate exploration/review. Fix narrow review failures
+directly. ${reviewGuidance}`;

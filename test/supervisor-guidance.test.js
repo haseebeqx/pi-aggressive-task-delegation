@@ -19,12 +19,12 @@ const ownership = [
   ['outcome-oriented assignment', /(?:Assign|Delegate) outcomes and acceptance criteria/i],
   ['steps only for concrete constraints or risks', /not prescribed steps, unless a concrete constraint or risk/i],
 ];
-const delegationPolicy = [
-  ['direct work by default', /Do (?:the )?work directly by default/i],
-  ['cost-benefit gate', /benefit outweighs.*?(?:extra model calls|extra tokens)/i],
-  ['small and known tasks stay local', /(?:Small fixes, routine reads\/searches, focused questions, and tasks already understood should normally stay local|small fixes, routine lookups, and known tasks)/i],
-  ['separability alone is insufficient', /(?:existence of separable subtasks alone is not a reason to delegate|separable steps alone do not justify delegation)/i],
-  ['user opt-out', /Respect (?:explicit )?user restrictions, including requests not to use workers/i],
+const mainRouting = [
+  ['substantive default', /Main(?:: delegate| delegates) substantive implementation or context-heavy investigation by default/i],
+  ['bounded orientation', /after brief bounded orientation/i],
+  ['observable routing triggers', /multi-file change, meaningful implementation plus tests, (?:or )?broad investigation/i],
+  ['trivial work exception', /Trivial localized edits.*?cheap lookups.*?may stay local/i],
+  ['whole cohesive handoff allowed', /(?:whole cohesive scope without manufacturing subtasks|Whole cohesive scope is allowed)/i],
 ];
 const workerExecution = [
   ['multi-step work stays direct', /Complete your assignment directly by default, even when it has multiple steps/i],
@@ -35,7 +35,7 @@ const workerExecution = [
 ];
 const discoveryUse = [
   ['optional not prerequisite', /Discovery is optional, not a prerequisite/i],
-  ['local facts first', /Use targeted local reads and searches first/i],
+  ['bounded Main orientation', /Main keeps orientation bounded, using targeted local reads and searches for routing or cheap facts only/i],
   ['no cheap discovery handoffs', /do not launch discovery for facts you can cheaply obtain directly/i],
   ['substantial isolated discovery only', /Delegate mode discover only for a substantial, bounded investigation that benefits from a fresh context/i],
   ['facts and gaps rather than implementation or plans', /verified evidence and gaps, not implementation or plans/i],
@@ -55,7 +55,7 @@ const discoveryRecursion = [
 const context = [
   ['sequential calls', /Call delegate_task sequentially/i],
   ['dependency order', /in dependency order when needed/i],
-  ['minimal relevant context', /Pass only relevant paths, requirements, decisions, and concise prior results, not transcripts/i],
+  ['minimal relevant context', /Pass only relevant paths, user and project requirements, outcomes, acceptance criteria, decisions, and concise verified prior worker reports, not transcripts/i],
   ['targeted transcript inspection', /only relevant transcript portions when needed, not whole logs by default/i],
 ];
 const integration = [
@@ -63,7 +63,7 @@ const integration = [
   ['PASS avoids duplicate work', /After PASS, integrate.*?without routinely repeating exploration, review, or leaf edits/i],
   ['targeted risk and integration checks', /targeted checks for specific risks, contradictions, gaps, or cross-task integration/i],
   ['new evidence remains relevant', /do not ignore new evidence/i],
-  ['direct correction unless delegation justified', /review failure, address the concrete findings directly unless a focused delegation independently justifies its overhead/i],
+  ['direct narrow correction', /review failure, fix narrow findings directly; delegate substantial remaining scope using the role-specific routing policy/i],
   ['no false success', /Do not claim success with unresolved failures/i],
 ];
 const riskGuidance = [
@@ -90,11 +90,20 @@ for (const [workflow, prompts] of Object.entries({ interactive, standalone })) {
   for (const role of ['supervisor', 'worker']) {
     const prompt = prompts[`${role}Prompt`];
     test(`${workflow} ${role}: ownership, discovery, context, integration and risk-based review`, () => {
-      check(prompt, [...ownership, ...delegationPolicy, ...discoveryUse, ...context, ...integration, ...riskGuidance]);
+      check(prompt, [...ownership, ...discoveryUse, ...context, ...integration, ...riskGuidance]);
       assert.ok(normalize(prompt).includes(normalize(reviewGuidance)), 'shared review guidance');
     });
   }
-  test(`${workflow}: Main and workers avoid automatic delegation and recursion`, () => {
+  test(`${workflow}: Main routes substantive scopes; workers avoid automatic recursion`, () => {
+    check(prompts.supervisorPrompt, [...mainRouting,
+      ['handoff before broad work', /Hand off before broad exploration or implementation; do not solve the task first/i],
+      ['familiarity is not exemption', /familiarity alone is not an exemption/i],
+      ['user and project delegation restrictions', /Respect user and applicable project delegation requirements, including restrictions on using workers/i],
+    ]);
+    assert.doesNotMatch(prompts.supervisorPrompt, /if uncertain, work locally|benefit outweighs|Never forward the whole assignment/i);
+    for (const child of [prompts.workerPrompt, prompts.discoveryPrompt]) {
+      assert.doesNotMatch(child, /Main delegates substantive|Routing triggers include|whole cohesive scope/i);
+    }
     check(prompts.supervisorPrompt, [['direct verification', /Verify your work, including work done directly/i]]);
     check(prompts.workerPrompt, workerExecution);
     check(prompts.workerPrompt, [
@@ -120,7 +129,7 @@ for (const [workflow, prompts] of Object.entries({ interactive, standalone })) {
     ]);
   });
   test(`${workflow} discovery: narrow recursion, read-only tools and verified evidence reports`, () => {
-    check(prompts.discoveryPrompt, [...delegationPolicy, ...discoveryRecursion, ...context,
+    check(prompts.discoveryPrompt, [...discoveryRecursion, ...context,
       ['Main owns coordination', /Main owns goals, cross-task constraints, breakdown, and integration/i],
       ['read-only evidence', /read-only, evidence-linked facts/i],
       ['no implementation, writes, artifacts or plans', /Do not implement, modify files, write artifacts, propose plans or task breakdowns/i],
@@ -149,6 +158,7 @@ test('user requirements override extension guidance in every role and tool descr
       ['explicit precedence on conflict', /User requirements take precedence over this extension's prompt guidance when they conflict/i],
       ['covers more than delegation opt-outs', /including workflow, scope, methods, and output format/i],
       ['propagates requirements to fresh contexts', /Preserve relevant user requirements in every child assignment/i],
+      ['project instructions and propagation', /Honor applicable project instructions, including AGENTS\.md delegation requirements, and carry them into child assignments/i],
       ['no silent requirement changes', /never silently drop or reinterpret them/i],
       ['safety and runtime constraints remain', /does not override platform safety rules or hard tool constraints/i],
       ['honest conflict reporting', /If a hard constraint prevents compliance, explain the conflict rather than claim compliance/i],
@@ -170,12 +180,17 @@ for (const [workflow, register] of Object.entries({ interactive: extension, stan
       registerShortcut() {}, registerEntryRenderer() {}, on() {} });
     assert.equal(tool.description, shared.delegationDescription, 'shared tool description');
     assert.ok(normalize(tool.description).includes(normalize(reviewGuidance)), 'shared review guidance');
-    check(tool.description, [...delegationPolicy, ...riskGuidance,
+    check(tool.description, [...mainRouting, ...riskGuidance,
       ['sequential calls', /Calls are sequential/i],
-      ['minimal context', /minimal relevant context, not transcripts/i],
-      ['read-only discovery', /Discovery must avoid mutations and side effects/i],
+      ['minimal acceptance context', /pass outcomes, acceptance criteria, paths, user\/project requirements and verified reports, not transcripts/i],
+      ['read-only optional discovery', /Optional mode discover is read-only with no separate reviewer, not a prerequisite; avoid mutations\/side effects/i],
       ['evidence and gaps', /return verified sources and gaps/i],
-      ['verification without duplication', /Verify all work; avoid repeating completed exploration or review/i],
+      ['verification without duplication', /Verify work; integrate PASS without duplicate exploration\/review/i],
+      ['user and project delegation restrictions', /Honor user\/project delegation restrictions/i],
+      ['handoff before broad exploration', /after brief bounded orientation, before broad exploration/i],
+      ['child direct work and bounded recursion', /Workers: execute assignments directly; recurse only for a strictly smaller, substantial context-isolated scope/i],
+      ['child-only no forwarding', /Workers:.*?Never forward unchanged assignments or manufacture splits/i],
+      ['direct narrow fixes', /Fix narrow review failures directly/i],
     ]);
     assert.ok(tool.description.split(/\s+/).length < 320, 'always-present description stays compact');
   });
