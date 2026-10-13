@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { runDelegateList, uncheckedTasks } from '../src/delegate-list.js';
 
 const pass = { details: { approved: true }, isError: false };
-function setup(t, text, execute) {
+function setup(t, text, execute, filename = 'todo file.md') {
   const cwd = mkdtempSync(join(tmpdir(), 'delegate-list-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
-  const path = join(cwd, 'todo file.md');
+  const path = join(cwd, filename);
   writeFileSync(path, text);
   const calls = [], notices = [];
   const ctx = { cwd };
@@ -18,7 +18,7 @@ function setup(t, text, execute) {
     calls.push(params);
     return execute?.(calls.length, path, signal) ?? pass;
   };
-  return { runnerRun: runner, run: async (name = 'todo file.md') => {
+  return { runnerRun: runner, run: async (name = filename) => {
     const result = await runDelegateList(name, { cwd, execute: invoke, signal: ctx.signal });
     notices.push([result.content[0].text]);
     return result;
@@ -126,9 +126,48 @@ test('removing the list preserves external text and finishes normally', async t 
 
 test('validates input before executing', async t => {
   const s = setup(t, '- [ ]   \n');
-  for (const args of ['', 'missing.md', 'todo.txt', 'todo file.md']) await s.run(args);
+  for (const [name, message] of [
+    ['', /task file path/], ['   ', /task file path/],
+    [null, /task file path/], [42, /task file path/],
+    ['missing.tasks', /ENOENT/], [s.ctx.cwd, /regular file/],
+    ['todo file.md', /non-empty/],
+  ]) {
+    const result = await runDelegateList(name, { cwd: s.ctx.cwd, execute: () => { s.calls.push(name); return pass; } });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, message);
+  }
   assert.equal(s.calls.length, 0);
   assert.throws(() => uncheckedTasks('- [ ] '), /non-empty/);
+});
+
+for (const filename of ['todo.tasks', 'todo.txt', 'todo.custom-extension', 'todo', 'todo.md', 'todo.markdown']) {
+  test(`checkbox tasks and shell commands work regardless of extension: ${filename}`, async t => {
+    const events = [];
+    const text = '!echo setup\n- [x] skipped\n- [ ] work\n!echo teardown\n';
+    const s = setup(t, text, undefined, filename);
+    const result = await runDelegateList(filename, {
+      cwd: s.ctx.cwd,
+      execute: async params => { s.calls.push(params); events.push('task'); return pass; },
+      onCommandOutput: ({ stream, text }) => { if (stream === 'label') events.push(text.trim()); },
+    });
+    assert.equal(result.isError, false);
+    assert.equal(result.details.completed, 1);
+    assert.deepEqual(s.calls.map(c => c.task), ['work']);
+    assert.deepEqual(events, ['delegate-list shell: !echo setup', 'task', 'delegate-list shell: !echo teardown']);
+    assert.equal(result.details.commands.length, 2);
+    assert.ok(result.details.commands.every(c => c.completed && c.exitCode === 0));
+    assert.equal(readFileSync(s.path, 'utf8'), text.replace('[ ] work', '[x] work'));
+  });
+}
+
+test('empty shell commands in .tasks files reject before any work', async t => {
+  const text = '- [ ] work\n!   \n';
+  const s = setup(t, text, undefined, 'todo.tasks');
+  const result = await s.run();
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Shell commands must have non-empty text/);
+  assert.equal(s.calls.length, 0);
+  assert.equal(readFileSync(s.path, 'utf8'), text);
 });
 
 test('rejects overlapping list runs', async t => {

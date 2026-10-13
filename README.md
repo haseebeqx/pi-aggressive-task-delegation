@@ -15,12 +15,12 @@ Fresh contexts isolate conversation history, **not the filesystem or OS permissi
 pi install npm:@haseebeqx/pi-aggressive-task-delegation
 # Or install for this project only:
 # pi install --local npm:@haseebeqx/pi-aggressive-task-delegation
-pi --delegate-list tmp/tasks.md
-pi --model sonnet:high --delegate-list "path with spaces/tasks.md"
+pi --delegate-list tmp/tasks.tasks
+pi --model sonnet:high --delegate-list "path with spaces/tasks.tasks"
 # One-shot, non-interactive (no prompt needed):
-pi --print --delegate-list tmp/tasks.md
+pi --print --delegate-list tmp/tasks.tasks
 # Without installing:
-pi -e npm:@haseebeqx/pi-aggressive-task-delegation --delegate-list tmp/tasks.md
+pi -e npm:@haseebeqx/pi-aggressive-task-delegation --delegate-list tmp/tasks.tasks
 ```
 
 Configure a working Pi model and credentials before running. For non-interactive
@@ -182,8 +182,11 @@ non-interactive list stops that list.
 
 ## Task files
 
-Use a regular `.md` or `.markdown` file, relative to the working directory or an
-absolute path. Tasks are independent/unrelated; each must be self-contained on one line:
+Use a regular file with any extension (or none), relative to the working directory
+or an absolute path. `.tasks` is recommended to distinguish executable task lists
+that can contain shell commands from ordinary Markdown; existing `.md` and
+`.markdown` files remain supported. Markdown-style checkbox syntax is unchanged.
+Tasks are independent/unrelated; each must be self-contained on one line:
 
 ```markdown
 - [ ] Add signup validation in src/signup.js and test malformed addresses

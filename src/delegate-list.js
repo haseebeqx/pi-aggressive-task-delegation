@@ -100,9 +100,8 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
   try {
     signal?.throwIfAborted();
     if (typeof execute !== 'function') throw new Error('Expected an executor function.');
-    if (typeof name !== 'string' || !name.trim()) throw new Error('Expected a Markdown file path.');
+    if (typeof name !== 'string' || !name.trim()) throw new Error('Expected a task file path.');
     const path = resolve(cwd, name);
-    if (!/\.(md|markdown)$/i.test(path)) throw new Error('Expected a .md or .markdown file.');
     if (!statSync(path).isFile()) throw new Error('Expected a regular file.');
     while (true) {
       signal?.throwIfAborted();
