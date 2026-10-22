@@ -200,9 +200,9 @@ command, sequentially among checkbox tasks, in **Pi's working directory** (not
 necessarily the task file's directory). No bullet or dot is needed:
 
 ```markdown
-!start-server
+!tmux new-session -d -s delegate-server 'npm run dev'  # start server
 - [ ] Test the signup page against the running server and fix validation
-!stop-server
+!tmux kill-session -t delegate-server  # stop server
 ```
 
 Commands are not model assignments, do not start sessions, and never go through
@@ -212,13 +212,13 @@ Empty command lines are rejected before work starts.
 
 A foreground command must exit before the next entry starts. For a long-running
 server, background it and redirect **all standard streams**, save its PID, and
-wait for readiness in the setup command. For example, on POSIX shells:
+wait for readiness in the setup command. For example, using tmux (recommended for reliable background processes):
 
 ```markdown
-!npm run dev </dev/null >.delegate-server.log 2>&1 & echo $! >.delegate-server.pid
-!n=0; until curl -fsS http://localhost:3000/ >/dev/null; do n=$((n+1)); [ "$n" -lt 30 ] || exit 1; sleep 1; done
+!tmux new-session -d -s delegate-server 'npm run dev'  # start server
+!n=0; until curl -fsS http://localhost:3000/ >/dev/null; do n=$((n+1)); [ "$n" -lt 30 ] || exit 1; sleep 1; done  # wait for readiness
 - [ ] Verify and fix signup validation using http://localhost:3000
-!kill "$(cat .delegate-server.pid)" && rm .delegate-server.pid
+!tmux kill-session -t delegate-server  # stop server
 ```
 
 Use a server-specific stop command if its launcher spawns subprocesses; killing
