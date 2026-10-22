@@ -8,7 +8,7 @@ function fixture(flag, overrides = {}, mode = 'print') {
   const notifications = [], statuses = [], inputHandlers = [];
   const host = new EventEmitter();
   let calls = 0, options, shutdowns = 0, inputCleanups = 0;
-  const pi = { registerFlag: (n, o) => { flags[n] = o; }, getFlag: () => flag,
+  const pi = { registerFlag: (n, o) => { flags[n] = o; }, getFlag: (name) => flags[name]?.type ? flag : undefined,
     registerCommand: (n, c) => { commands[n] = c; },
     sendUserMessage: (...args) => messages.push(args),
     on: (n, h) => { (handlers[n] ??= []).push(h); } };
@@ -29,7 +29,9 @@ function fixture(flag, overrides = {}, mode = 'print') {
           if (index !== -1) inputHandlers.splice(index, 1);
         };
       },
-    } };
+    },
+    appendEntry: () => {},
+    session: { sendUserMessage: () => {} } };
   const emit = async (name, event = {}) => { for (const h of handlers[name] ?? []) await h(event, ctx); };
   return { flags, host, output, messages, commands, ctx, emit,
     notifications, statuses, inputHandlers,
