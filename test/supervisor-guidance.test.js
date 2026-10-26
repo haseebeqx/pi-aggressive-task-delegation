@@ -27,11 +27,10 @@ const mainRouting = [
   ['whole cohesive handoff allowed', /(?:whole cohesive scope without manufacturing subtasks|Whole cohesive scope is allowed)/i],
 ];
 const workerExecution = [
-  ['multi-step work stays direct', /Complete your assignment directly by default, even when it has multiple steps/i],
-  ['exceptional cost-justified recursion', /Recursive delegation is exceptional.*?strictly smaller scope.*?benefit outweighs its overhead/i],
+  ['direct when it fits context', /Complete your assignment directly when it fits comfortably in your context/i],
+  ['early delegation under context pressure', /Never struggle with limited context: delegate early, before context pressure builds/i],
   ['no unchanged or reworded forwarding', /Never forward the whole assignment unchanged or merely reworded/i],
   ['no artificial split', /or split artificially/i],
-  ['no supervisor chains', /Do not create a chain of supervisors for work you can finish yourself/i],
 ];
 const discoveryUse = [
   ['optional not prerequisite', /Discovery is optional, not a prerequisite/i],
@@ -43,9 +42,9 @@ const discoveryUse = [
   ['decision-relevant follow-up', /Follow up only on decision-relevant gaps/i],
 ];
 const discoveryRecursion = [
-  ['direct facts by default', /Gather facts directly by default/i],
-  ['exceptional cost-justified recursion', /Recursive discovery is exceptional and must justify its extra cost/i],
-  ['strict scope reduction', /substantial, strictly narrower factual scope/i],
+  ['direct facts when scope fits', /Gather facts directly when the scope fits comfortably in your context/i],
+  ['early delegation under context pressure', /Never struggle with limited context: delegate early, before context pressure builds/i],
+  ['strict scope reduction', /strictly narrower factual scope/i],
   ['discovery only', /mode discover only/i],
   ['no execution delegation', /never delegate execution/i],
   ['no unchanged forwarding', /Never forward the whole assignment unchanged or merely reworded/i],
@@ -109,7 +108,7 @@ for (const [workflow, prompts] of Object.entries({ interactive, standalone })) {
     check(prompts.workerPrompt, [
       ['assigned scope and constraints', /Complete only the assigned task.*?respect the assigned goals, acceptance criteria, and cross-task constraints/i],
       ['mandatory verification', /Verify your work/i],
-      ['compact outcome report', /concise report.*?Outcome; Files changed or relevant artifacts; Verification actually performed; Unresolved issues/i],
+      ['compact outcome report', /concise report.*?Outcome; Files changed or relevant artifacts; Verification actually performed.*?; Assumptions and unresolved issues/i],
       ['reviewable paths and facts', /paths and facts needed for independent review/i],
       ['no raw dumps', /not tool logs, file dumps, or internal reasoning/i],
     ]);
@@ -188,8 +187,8 @@ for (const [workflow, register] of Object.entries({ interactive: extension, stan
       ['verification without duplication', /Verify work; integrate PASS without duplicate exploration\/review/i],
       ['user and project delegation restrictions', /Honor user\/project delegation restrictions/i],
       ['handoff before broad exploration', /after brief bounded orientation, before broad exploration/i],
-      ['child direct work and bounded recursion', /Workers: execute assignments directly; recurse only for a strictly smaller, substantial context-isolated scope/i],
-      ['child-only no forwarding', /Workers:.*?Never forward unchanged assignments or manufacture splits/i],
+      ['children may delegate when needed', /Workers, reviewers and discoverers may delegate when needed so context never runs short \(reviewers and discoverers: mode discover only\)/i],
+      ['no forwarding', /Never forward unchanged assignments or manufacture splits/i],
       ['direct narrow fixes', /Fix narrow review failures directly/i],
     ]);
     assert.ok(tool.description.split(/\s+/).length < 320, 'always-present description stays compact');

@@ -14,7 +14,8 @@ criteria, not prescribed steps, unless a concrete constraint or risk requires th
 
 const mainDelegation = `Main delegates substantive implementation or context-heavy investigation by default
 after brief bounded orientation: read applicable project instructions and only enough
-targeted files to route the task. Routing triggers include a multi-file change,
+targeted files to route the task (roughly five reads or searches at most). Routing
+triggers include a multi-file change,
 meaningful implementation plus tests, or broad investigation. Hand off before broad
 exploration or implementation; do not solve the task first. Main may delegate the
 whole cohesive scope without manufacturing subtasks. Trivial localized edits, cheap
@@ -22,11 +23,12 @@ lookups, and focused questions may stay local; familiarity alone is not an exemp
 Respect user and applicable project delegation requirements, including restrictions
 on using workers. Do not delegate trivial work merely to increase call counts.`;
 
-const workerExecution = `Complete your assignment directly by default, even when it has multiple steps.
-Recursive delegation is exceptional: use it only for a substantial, strictly smaller
-scope whose context-isolation benefit outweighs its overhead. Never forward the whole
-assignment unchanged or merely reworded, or split artificially. Do not create a
-chain of supervisors for work you can finish yourself.`;
+const workerExecution = `Complete your assignment directly when it fits comfortably in your context.
+Never struggle with limited context: delegate early, before context pressure builds,
+when remaining scope is large, spans many files, or needs heavy reading or investigation.
+Delegate a distinct part (execute) or a bounded investigation (discover) with its own
+acceptance criteria and keep the rest. Never forward the whole assignment unchanged or
+merely reworded, or split artificially.`;
 
 const discoveryUse = `Discovery is optional, not a prerequisite to execution. Main keeps orientation
 bounded, using targeted local reads and searches for routing or cheap facts only.
@@ -35,11 +37,16 @@ Delegate mode discover only for a substantial, bounded investigation that benefi
 from a fresh context. It returns verified evidence and gaps, not implementation or
 plans, with no separate review stage. Follow up only on decision-relevant gaps.`;
 
-const discoveryRecursion = `Gather facts directly by default. Recursive discovery is exceptional and must
-justify its extra cost with a substantial, strictly narrower factual scope that
-benefits from context isolation. Use mode discover only; never delegate execution.
-Never forward the whole assignment unchanged or merely reworded, or split artificially.
+const discoveryRecursion = `Gather facts directly when the scope fits comfortably in your context.
+Never struggle with limited context: delegate early, before context pressure builds,
+when the investigation is broad or needs heavy reading. Use mode discover only; never delegate execution. Give each child a strictly narrower factual scope. Never forward the
+whole assignment unchanged or merely reworded, or split artificially.
 Use bounded searches and targeted reads; stop when the assigned questions are answered.`;
+
+const reviewerDelegation = `Never struggle with limited context: when verification is broad or needs heavy
+reading, delegate early with delegate_task using mode discover only (read-only fact
+gathering with specific questions), then verify decision-relevant evidence yourself.
+Never delegate execution or review.`;
 
 const context = `Call delegate_task sequentially, in dependency order when needed. Pass only
 relevant paths, user and project requirements, outcomes, acceptance criteria,
@@ -71,18 +78,29 @@ shared working directory. Follow project instructions and respect the assigned
 goals, acceptance criteria, and cross-task constraints.
 ${workerExecution}
 ${sharedGuidance}
-Inspect relevant files and implement only within scope. Verify your work.
+Inspect relevant files and implement only within scope. Verify your work. If the
+assignment is ambiguous, make the most reasonable assumption and state it; if it is
+blocked, say so rather than guess. If the context includes review findings from an
+earlier attempt, treat them as the reviewer's claims: verify each, fix the valid ones,
+explain any you reject, and make no unrelated changes.
 Return a concise report (aim for under 200 words): Outcome; Files changed or relevant
-artifacts; Verification actually performed; Unresolved issues. Include paths and
-facts needed for independent review, not tool logs, file dumps, or internal reasoning.`;
+artifacts; Verification actually performed (exact commands and results); Assumptions
+and unresolved issues. Include paths and facts needed for independent review, not
+tool logs, file dumps, or internal reasoning.`;
 
 export const reviewerPrompt = `You are an independent reviewer with a fresh context.
 ${userRequirements}
 Review the assigned task against the actual workspace and worker report. Treat claims as claims, not proof;
 inspect relevant files and run appropriate checks. Do not modify files or implement fixes.
-Report concrete failures and missing verification; never approve solely on worker claims.
+${reviewerDelegation}
+First derive a checklist from the acceptance criteria and user requirements, then check
+each item, plus regressions in adjacent code and missing tests. Report concrete failures and
+missing verification; never approve solely on worker claims, and do not soften a FAIL because the report sounds confident.
 Begin the final report with exactly PASS or FAIL on its own line, then concise
 findings, checks actually performed, and limitations (under 200 words).
+List each blocking failure on its own line with the file or symbol and what is wrong,
+so it can be fixed without rediscovery. "PASS with caveats" is not allowed: a minor
+non-blocking note goes under PASS, anything blocking means FAIL.
 PASS means all task requirements are met; otherwise use FAIL.`;
 
 export const discoveryPrompt = `You are a discovery agent with a fresh context. Follow project instructions.
@@ -102,7 +120,7 @@ Check scope, evidence accuracy, coverage, inferences, and disclosed gaps.
 Return compact decision-relevant findings with files/symbols/line references or
 source URLs and passages, observed behavior and constraints, checks actually performed,
 and explicit unknowns/gaps. Distinguish verified facts from inference; state coverage
-and limitations. Aim for about 300 words, preserving important evidence and gaps.
+and limitations. Structure it as Answers, Evidence, Gaps; aim for about 300 words, preserving important evidence.
 No separate reviewer or PASS/FAIL verdict is required. Do not create report artifacts
 or return raw logs, file dumps, or transcripts.`;
 
@@ -116,9 +134,9 @@ Main: delegate substantive implementation or context-heavy investigation by defa
 after brief bounded orientation, before broad exploration. Triggers: multi-file
 change, meaningful implementation plus tests, broad investigation. Whole cohesive
 scope is allowed. Trivial localized edits and cheap lookups may stay local.
-Workers: execute assignments directly; recurse only for a strictly smaller,
-substantial context-isolated scope. Never forward unchanged assignments or
-manufacture splits. Honor user/project delegation restrictions.
+Workers, reviewers and discoverers may delegate when needed so context never runs
+short (reviewers and discoverers: mode discover only). Never forward unchanged
+assignments or manufacture splits. Honor user/project delegation restrictions.
 Execution uses a fresh worker with independent review by default. Optional mode
 discover is read-only with no separate reviewer, not a prerequisite; avoid mutations/side effects
 and return verified sources and gaps. Calls are sequential; pass outcomes, acceptance criteria,

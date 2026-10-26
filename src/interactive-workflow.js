@@ -1,3 +1,5 @@
+import { isPass } from './review-policy.js';
+
 export { supervisorPrompt, workerPrompt, reviewerPrompt, discoveryPrompt,
   rolePrompts } from './role-prompts.js';
 
@@ -83,7 +85,7 @@ Independent review skipped (review:false). Worker completion only; no independen
         if (review.logPath) logs[reviewRole] = review.logPath;
         if (review.sessionId) sessionIds[reviewRole] = review.sessionId;
         signal?.throwIfAborted();
-        const approved = /^PASS(?:\r?\n|$)/.test(review.report.trim());
+        const approved = isPass(review.report);
         reviewStatus = approved ? 'passed' : 'failed';
         return {
           content: [{ type: 'text', text: `${reportLabel}:\n${worker.report}\n\nReview:\n${review.report}${logText()}` }],

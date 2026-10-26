@@ -387,6 +387,7 @@ for (const verdict of ['PASS', 'FAIL']) {
         completed: approved,
         reviewStatus: approved ? 'passed' : 'failed',
         independentApproved: approved,
+        ...(approved ? {} : { reviewReport: reviewer.report }),
         logs: { worker: '/logs/worker.jsonl', reviewer: '/logs/reviewer.jsonl' },
         ...(expectedIds === null ? {} : { sessionIds: expectedIds }),
       });

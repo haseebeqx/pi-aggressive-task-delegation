@@ -46,7 +46,7 @@ export function createStandaloneExecutor({ cwd = process.cwd(), model, modelRunt
       appendSystemPromptOverride: (base) => [...base, rolePrompts[role]],
       extensionFactories: [
         { name: 'aggressive-task-delegation', factory: (pi) => registerDelegateTasks(pi, {
-          discoveryOnly: role === 'discoverer',
+          discoveryOnly: role === 'discoverer' || role === 'reviewer',
           createExecutor: (options) => createStandaloneExecutor({ ...options,
             agentDir: directory, modelRuntime, sdk, onOutput }),
         }) },

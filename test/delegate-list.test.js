@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runDelegateList, uncheckedTasks } from '../src/delegate-list.js';
@@ -542,16 +542,61 @@ test('command cancellation terminates foreground work and prevents task and tear
   assert.match(result.content[0].text, /cancel command/);
 });
 
-test('consumed unique commands follow shifts; live insertions and revisions run in source order', async t => {
+test('consumed unique commands follow shifts while a worker runs', async t => {
   const s = setup(t, '!printf setup >> state\n- [ ] work\n!printf old >> state\n', (_n, path) => {
-    writeFileSync(path, '# moved\n!printf setup >> state\n!printf inserted >> state\n- [ ] work\n!printf revised >> state\n');
+    writeFileSync(path, '# moved\n!printf setup >> state\n- [ ] work\n!printf old >> state\n');
     return pass;
   });
   const result = await s.run();
   assert.equal(result.isError, false);
-  assert.equal(result.details.commands.length, 3);
+  assert.equal(result.details.commands.length, 2);
   assert.equal(s.calls.length, 1);
-  assert.equal(readFileSync(join(s.ctx.cwd, 'state'), 'utf8'), 'setupinsertedrevised');
+  assert.equal(readFileSync(join(s.ctx.cwd, 'state'), 'utf8'), 'setupold');
+});
+
+test('shell commands added while a worker runs are refused, but the approved checkbox is kept', async t => {
+  const s = setup(t, '- [ ] work\n', (_n, path) => {
+    writeFileSync(path, '- [ ] work\n!touch injected\n');
+    return pass;
+  });
+  const result = await s.run();
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /appeared in the task file while a worker was running.*!touch injected/);
+  assert.equal(result.details.commands, undefined);
+  assert.equal(existsSync(join(s.ctx.cwd, 'injected')), false);
+  assert.match(readFileSync(s.path, 'utf8'), /\[x\] work/);
+});
+
+test('review rejection triggers bounded revisions that carry the findings', async t => {
+  const rejected = { isError: true, details: { approved: false, independentApproved: false,
+    reviewStatus: 'failed', reviewReport: 'FAIL\nmissing test' } };
+  let n = 0;
+  const s = setup(t, '- [ ] work\n', () => (++n < 3 ? rejected : pass));
+  const result = await s.run();
+  assert.equal(result.isError, false);
+  assert.equal(s.calls.length, 3);
+  assert.doesNotMatch(s.calls[0].context, /missing test/);
+  assert.match(s.calls[1].context, /rejected by independent review[\s\S]*missing test/);
+  assert.equal(result.details.items[0].revisions, 2);
+  assert.match(result.content[0].text, /revisions after review rejection: 2/);
+
+  const always = setup(t, '- [ ] work\n', () => rejected);
+  const stopped = await always.run();
+  assert.equal(stopped.isError, true);
+  assert.equal(always.calls.length, 3);
+  assert.match(readFileSync(always.path, 'utf8'), /\[ \] work/);
+});
+
+test('dropped approval after an edit is reported in the result', async t => {
+  const s = setup(t, '- [ ] work\n', (n, path) => {
+    if (n === 1) writeFileSync(path, '- [ ] work edited\n');
+    return pass;
+  });
+  const result = await s.run();
+  assert.equal(result.isError, false);
+  assert.equal(s.calls.length, 2);
+  assert.match(result.details.items[0].note, /approval not recorded/);
+  assert.match(result.content[0].text, /note: approval not recorded/);
 });
 
 test('own checkbox writes do not repeat duplicate commands; external ambiguous edits stop safely', async t => {

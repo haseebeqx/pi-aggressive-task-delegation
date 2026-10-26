@@ -73,7 +73,8 @@ for (const [name, { createDelegator, emptyUsage }] of Object.entries({ standalon
       const result = await delegate({ task: 'Task', review: true });
       assert.equal(result.isError, true);
       assert.deepEqual(result.details, { approved: false, completed: false,
-        reviewStatus: 'failed', independentApproved: false });
+        reviewStatus: 'failed', independentApproved: false,
+        ...(name === 'standalone' ? { reviewReport: verdict } : {}) });
     });
   }
 
@@ -168,4 +169,10 @@ test('interactive registered tool forwards review to delegator validation before
   const tool = capture(extension);
   await assert.rejects(tool.execute('id', { task: 'Task', review: 'false' }, undefined, undefined,
     { hasUI: false }), /review must be a boolean/);
+});
+
+test('isPass accepts formatted verdict lines only', async () => {
+  const { isPass } = await import('../src/review-policy.js');
+  for (const ok of ['PASS', 'PASS\nall good', '**PASS**\nok', 'PASS.', '\n# PASS', '`PASS`']) assert.equal(isPass(ok), true, ok);
+  for (const bad of ['', 'FAIL', 'PASS with caveats', 'PASSING', 'Looks good\nPASS', undefined]) assert.equal(isPass(bad), false, String(bad));
 });

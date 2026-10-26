@@ -1,6 +1,6 @@
 # Pi aggressive task delegation
 
-Interactive task delegation and sequential Markdown task execution with fresh worker sessions and independent review. Requires Node.js 22+ and Pi (native session API verified with `1.0.4`; compatibility with every Pi version is not guaranteed).
+Interactive task delegation and sequential Markdown task execution with fresh worker sessions and independent review. Requires Node.js 22+ and Pi (native session API verified with `1.0.x`; the package declares Pi `>=1.0.0 <2`).
 
 Two entry points:
 
@@ -65,7 +65,7 @@ the flag: Pi can process those separately after startup.
 
 Each item finishes (and, in non-interactive mode, passes independent review)
 before its checkbox is saved and the next starts. Workers execute directly by default,
-using recursive delegation only for a substantial, strictly smaller context-isolated scope;
+delegating further whenever needed so context never runs short;
 scoped discovery is available through `delegate_task` with `mode: "discover"`. Items receive only their
 own assignment and source path, not prior reports or Main history.
 
@@ -96,8 +96,9 @@ Example tool arguments:
 
 Execution returns the worker report, an independent reviewer report when enabled,
 aggregate usage, and transcript log paths. Independent approval requires the
-reviewer's trimmed report to begin with `PASS` on its own line; `FAIL` or a malformed
-verdict is not approval. With `review:false`, successful worker completion returns
+reviewer's trimmed report to begin with a `PASS` line (markdown emphasis and trailing
+punctuation such as `**PASS**` or `PASS.` are tolerated); `FAIL`, `PASS with caveats`
+or any other verdict is not approval. With `review:false`, successful worker completion returns
 without reviewer calls, logs, usage/cost, or review progress; the report explicitly
 says independent review was skipped. Worker failure or cancellation still fails.
 
@@ -150,10 +151,12 @@ Main owns goals, cross-task constraints, breakdown, and integration; workers own
 implementation choices within scope. Pass concise outcomes, acceptance criteria,
 relevant paths, user/project requirements, decisions, and verified prior worker
 reports—not transcripts. Favor outcomes over prescribed steps except for concrete
-constraints or risks. Workers **execute their assignment directly**, including
-multi-step work. Recursive delegation is exceptional: only a substantial, strictly
-smaller context-isolated scope may justify it. Workers must not forward the whole
-assignment unchanged or reworded, manufacture splits, or create supervisor chains.
+constraints or risks. Workers **execute directly when the assignment fits comfortably
+in their context**. Workers, reviewers and discovery agents may all delegate, and
+should do so early, before context pressure builds, rather than struggle with limited
+context. Reviewers and discovery agents delegate with `mode: "discover"` only, so they
+stay read-only. No role may forward the whole assignment unchanged or reworded, or
+manufacture splits.
 The Main whole-scope handoff is not this prohibited child forwarding.
 
 Discovery is optional, not a prerequisite. Main's initial reads/searches are bounded
@@ -161,8 +164,8 @@ routing or cheap fact checks, not broad exploration before handoff. Use discover
 for substantial bounded investigations benefiting from context isolation; use execution
 directly when implementation is ready to assign. Discovery agents gather facts directly
 and stop when their questions are answered. They stay read-only and verify evidence
-without a separate reviewer; recursive discovery requires a substantial strictly
-narrower factual scope and cannot delegate execution. All calls are sequential,
+without a separate reviewer; recursive discovery needs a strictly narrower factual
+scope and cannot delegate execution. All calls are sequential,
 in dependency order when needed, never parallel.
 
 Independent review defaults to true. Use `review:false` for low-risk, narrow work
@@ -250,6 +253,11 @@ for live-editable lists. Checkbox identity/persistence rules below are unchanged
 **Trusted shell input only:** running a list executes its `!` lines directly with
 your OS permissions, without confirmation, model review, sandboxing, or Pi tool
 permission hooks. Trust the entire file and anyone who can edit it while running.
+As a guard against a worker writing commands into the file, any `!` line that
+appears while a worker is running is never executed: the run records the item's
+result, then stops with an error naming the new commands. Rerun after reviewing the
+file (the commands are then part of the initial file). This also stops the run if you
+add a `!` line by hand during a worker run.
 
 Bullets (`-`, `+`, `*`) and numbered items (`1.` or `1)`) are supported; checked
 items (`[x]` or `[X]`) and fenced code examples are skipped. The footer's `#n` is
@@ -258,8 +266,11 @@ completed during this run. Continuation lines/headings are not task context.
 Empty unchecked items are rejected before work starts. After successful completion,
 the runner waits for checkbox persistence before starting
 the next item. Only that checkbox's space changes to `x`; formatting and line endings remain
-unchanged. Failure or cancellation stops the list with remaining
-items unchecked. There are no automatic retries or rollback of worker edits.
+unchanged. If independent review rejects an item, up to two fresh worker attempts
+(`maxRevisions`, default 2) receive the reviewer's findings and are reviewed again;
+the result lists the revision count. Other failures and cancellation, or a rejection
+after the last revision, stop the list with remaining items unchecked. There is no
+rollback of worker edits.
 Rerun the command to resume unchecked items.
 
 You may insert tasks anywhere, edit pending or completed items, reorder or delete
@@ -274,7 +285,8 @@ deleting that task leaves the latest file untouched; the runner continues with t
 latest unchecked tasks, so revised text must execute and pass independent review
 again. Duplicate task text is ambiguous across edits: the runner leaves that
 approval unmarked rather than checking an unrelated occurrence, then executes the
-latest unchecked items afresh. Unchanged duplicate lists are processed normally.
+latest unchecked items afresh; the result notes `approval not recorded` for that item.
+Unchanged duplicate lists are processed normally.
 Use distinct self-contained task descriptions to avoid redundant execution.
 
 The runner finishes as soon as a fresh read finds no unchecked tasks or unconsumed commands; it does not

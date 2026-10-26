@@ -2,7 +2,7 @@
 // supervisor's live runtime instead of loading extensions (and their UI) again.
 export function inheritTools(parentCtx, delegateTool, { discoveryOnly = false } = {}) {
   if (!Array.isArray(parentCtx.tools) || typeof parentCtx.executeTool !== 'function') {
-    throw new Error('Tool inheritance requires Pi ExtensionToolContext.tools and executeTool (tested with Pi 0.99.2).');
+    throw new Error('Tool inheritance requires Pi ExtensionToolContext.tools and executeTool (tested with Pi 1.x).');
   }
   const customTools = parentCtx.tools.filter((tool) => tool.name !== 'delegate_task')
     .map((tool) => {

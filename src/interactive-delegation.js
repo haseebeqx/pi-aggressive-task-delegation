@@ -129,14 +129,16 @@ export default function taskDivider(pi) {
       sessionManager = SessionManager.open(logPath, logDirectory);
       sessionManager.appendCustomEntry('delegation', { role, parentSession });
       let node;
+      // Reviewers and discoverers are read-only: they may delegate discovery only.
+      const readOnly = role.startsWith('discover') || role === 'reviewer';
       const { session } = await createAgentSession({
         cwd: parentCtx.cwd,
         model: parentCtx.model,
         thinkingLevel: parentCtx.thinkingLevel,
         resourceLoader: loader,
         sessionManager,
-        ...inheritTools(parentCtx, makeTool(parentCtx, () => node, role.startsWith('discover')),
-          { discoveryOnly: role.startsWith('discover') }),
+        ...inheritTools(parentCtx, makeTool(parentCtx, () => node, readOnly),
+          { discoveryOnly: readOnly }),
       }).catch((error) => {
         error.logPath = logPath;
         throw error;

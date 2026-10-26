@@ -58,6 +58,28 @@ function approvedItem(before, after, original, previousItems, latestItems) {
   return previous.length === 1 && latest.length === 1 ? latest[0] : undefined;
 }
 
+// Shell lines present in `latest` beyond those in `before`. A worker shares the
+// filesystem, so a command that appears while it runs is never trusted.
+function addedCommands(before, latest) {
+  const known = new Map();
+  for (const { text } of listEntries(before)) known.set(text, (known.get(text) ?? 0) + 1);
+  const added = [];
+  for (const item of listEntries(latest)) {
+    if (item.kind !== 'command') continue;
+    const remaining = known.get(item.text) ?? 0;
+    if (remaining) known.set(item.text, remaining - 1);
+    else added.push(item.command);
+  }
+  return added;
+}
+
+const revisionContext = (context, report, workerReport) => `${context}
+
+An earlier attempt at this item was rejected by independent review. Its changes remain in the working tree. The findings are the reviewer's claims: verify each, fix the valid ones, and explain in your report any you reject. Make no unrelated changes and do not start over unless necessary.
+${workerReport ? `\nPrevious attempt's report:\n${workerReport}\n` : ''}
+Review findings:
+${report}`;
+
 const outcome = (completed, error, usage, items = [], commands = []) => {
   const summary = error
     ? `delegate-list stopped after ${completed} item(s): ${error}`
@@ -65,6 +87,8 @@ const outcome = (completed, error, usage, items = [], commands = []) => {
   const lines = [summary];
   for (const item of items) {
     lines.push(`Task ${item.taskNumber} [${item.completed ? 'completed' : 'not completed'}]: ${item.task}`);
+    if (item.revisions) lines.push(`  revisions after review rejection: ${item.revisions}`);
+    if (item.note) lines.push(`  note: ${item.note}`);
     for (const [role, sessionId] of Object.entries(item.sessionIds)) {
       if (sessionId) lines.push(`  ${role} session ID: ${sessionId}`);
     }
@@ -86,8 +110,11 @@ const activePaths = new Set();
 /** Execute and persist approved tasks in order. execute(params, signal) must
  * return a reviewed tool result with details.approved === true on success.
  * Paths are literal (no shell quotes or @ references). Concurrent runs of the
- * same resolved path are rejected; independent files may run concurrently. */
-export async function runDelegateList(name, { cwd = process.cwd(), execute, signal, onCommandOutput = ({ text }) => process.stderr.write(text) } = {}) {
+ * same resolved path are rejected; independent files may run concurrently.
+ * When review rejects an item (details.reviewReport), up to maxRevisions fresh
+ * attempts receive the findings. Shell lines that appear in the file while a
+ * worker runs are never executed: the run stops after recording the item. */
+export async function runDelegateList(name, { cwd = process.cwd(), execute, signal, maxRevisions = 2, onCommandOutput = ({ text }) => process.stderr.write(text) } = {}) {
   const key = typeof name === 'string' && name.trim() ? resolve(cwd, name) : undefined;
   if (activePaths.has(key)) return outcome(0, 'A delegate-list run is already active.');
   activePaths.add(key);
@@ -143,23 +170,40 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
         sessionIds: {}, logs: {},
       };
       items.push(attempt);
-      const result = await execute({
-        task: item.task, mode: 'execute', review: true, taskNumber: item.taskNumber,
-        context: `Todo source: ${path}. Complete only this item. Do not edit the todo source; checkbox updates are managed by the list runner.`,
-      }, signal);
-      attempt.sessionIds = { ...(result?.details?.sessionIds ?? {}) };
-      attempt.logs = { ...(result?.details?.logs ?? {}) };
-      addUsage(usage, result.usage);
-      signal?.throwIfAborted();
+      const baseContext = `Todo source: ${path}. Complete only this item; earlier items are already done and later ones are not yours. Do not edit the todo source; checkbox updates are managed by the list runner. If the item is ambiguous, state your assumption; if it is blocked, say so.`;
+      let context = baseContext;
+      let result;
+      while (true) {
+        result = await execute({
+          task: item.task, mode: 'execute', review: true, taskNumber: item.taskNumber, context,
+        }, signal);
+        attempt.sessionIds = { ...(result?.details?.sessionIds ?? {}) };
+        attempt.logs = { ...(result?.details?.logs ?? {}) };
+        addUsage(usage, result.usage);
+        signal?.throwIfAborted();
+        const report = result.details?.reviewReport;
+        if (!(result.details?.reviewStatus === 'failed' && typeof report === 'string' &&
+            (attempt.revisions ?? 0) < maxRevisions)) break;
+        attempt.revisions = (attempt.revisions ?? 0) + 1;
+        context = revisionContext(baseContext, report, result.details?.workerReport);
+      }
       if (result.isError || result.details?.approved !== true ||
-          result.details?.reviewStatus === 'skipped' || result.details?.independentApproved === false) throw new Error(result.content?.filter(p => p.type === 'text').map(p => p.text).join('\n') || 'Delegation did not succeed.');
+          result.details?.reviewStatus === 'skipped' || result.details?.independentApproved === false) throw new Error((attempt.revisions ? `After ${attempt.revisions} revision(s): ` : '') + result.content?.filter(p => p.type === 'text').map(p => p.text).join('\n') || 'Delegation did not succeed.');
       // No await between the fresh read and write. Update only the safely
       // identified checkbox in the latest text, never a stale source offset.
       const latest = readFileSync(path, 'utf8');
       const current = approvedItem(before, latest, item, previousItems, checkboxTasks(latest));
       // Edited/deleted/ambiguous tasks retain no approval. A fresh iteration
       // executes the latest unchecked task (including revised text) again.
-      if (!current) continue;
+      const added = addedCommands(before, latest);
+      const refuseAdded = () => {
+        if (added.length) throw new Error(`Shell command(s) appeared in the task file while a worker was running and were not executed: ${added.map(c => `!${c}`).join(', ')}. Review the file and rerun.`);
+      };
+      if (!current) {
+        attempt.note = 'approval not recorded because the task was edited, removed or ambiguous during the run; the latest unchecked task will run again.';
+        refuseAdded();
+        continue;
+      }
       if (!current.checked) {
         const updated = latest.slice(0, current.offset) + 'x' + latest.slice(current.offset + 1);
         writeFileSync(path, updated, 'utf8');
@@ -168,6 +212,7 @@ export async function runDelegateList(name, { cwd = process.cwd(), execute, sign
       }
       attempt.completed = true;
       completed++;
+      refuseAdded();
     }
     return outcome(completed, undefined, usage, items, commands);
   } catch (error) {

@@ -14,7 +14,7 @@ test('release manifest declares public access and host-provided peers', () => {
   assert.ok(manifest.keywords.includes('pi-package'));
   assert.deepEqual(manifest.pi.extensions, ['./src/extension.js']);
   for (const name of ['@earendil-works/pi-coding-agent', '@earendil-works/pi-tui', 'typebox']) {
-    assert.equal(manifest.peerDependencies[name], '*');
+    assert.equal(manifest.peerDependencies[name], name.startsWith('@earendil-works/') ? '>=1.0.0 <2' : '*');
     assert.equal(manifest.dependencies?.[name], undefined);
   }
 });

@@ -1,3 +1,5 @@
+import { isPass } from './review-policy.js';
+
 export { supervisorPrompt, workerPrompt, reviewerPrompt, discoveryPrompt,
   rolePrompts } from './role-prompts.js';
 
@@ -46,6 +48,8 @@ export function createDelegator(runAgent, { discoveryOnly = false } = {}) {
       const details = (approved) => ({ approved,
         ...(mode === 'execute' ? { completed: approved, reviewStatus,
           independentApproved: reviewStatus === 'passed' } : {}),
+        // Lets a list runner feed a rejection back to a revision attempt.
+        ...(reviewStatus === 'failed' ? { reviewReport: review.report } : {}),
         ...(Object.keys(logs).length ? { logs: { ...logs } } : {}),
         ...(Object.keys(sessionIds).length ? { sessionIds: { ...sessionIds } } : {}) });
       try {
@@ -77,7 +81,7 @@ Independent review skipped (review:false). Worker completion only; no independen
         if (review.logPath) logs.reviewer = review.logPath;
         if (review.sessionId) sessionIds.reviewer = review.sessionId;
         signal?.throwIfAborted();
-        const approved = /^PASS(?:\r?\n|$)/.test(review.report.trim());
+        const approved = isPass(review.report);
         reviewStatus = approved ? 'passed' : 'failed';
         return {
           content: [{ type: 'text', text: `Worker report:\n${worker.report}\n\nReview:\n${review.report}${logText()}` }],
