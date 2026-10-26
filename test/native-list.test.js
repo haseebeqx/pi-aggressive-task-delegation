@@ -62,8 +62,8 @@ test('fresh native contexts submit normal supervisor prompts sequentially and pr
   ]);
   assert.match(f.notifications.at(-1).text, /Task 3 \[completed\]: appended\n  supervisor session ID: native-3/);
   assert.equal(f.notifications.at(-1).level, 'info');
-  assert.match(f.prompts[0], /Main delegates substantive implementation or context-heavy investigation by default/);
-  assert.match(f.prompts[0], /after brief bounded orientation/);
+  assert.match(f.prompts[0], /By default, Main hands off substantial implementation and context-heavy investigation/);
+  assert.match(f.prompts[0], /First do a short orientation/);
   assert.match(f.prompts[0], /Task:\nfirst/);
   assert.doesNotMatch(f.prompts[1], /Task:\nfirst/);
   assert.match(f.prompts[2], /Task:\nappended/);

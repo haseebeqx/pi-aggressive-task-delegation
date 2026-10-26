@@ -168,7 +168,7 @@ without a separate reviewer; recursive discovery needs a strictly narrower factu
 scope and cannot delegate execution. All calls are sequential,
 in dependency order when needed, never parallel.
 
-Independent review defaults to true. Use `review:false` for low-risk, narrow work
+Independent review is on by default. Use `review:false` for low-risk, narrow work
 with concrete worker verification, or to avoid redundant nested reviews. Retain
 review for risky, security-sensitive or broad changes, uncertain verification, or
 explicit user requirements. Skipping review never skips worker verification.

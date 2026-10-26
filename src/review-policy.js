@@ -1,11 +1,11 @@
 // Per-delegation review is optional; the whole-item task-list gate is not.
-export const reviewGuidance = `Independent review defaults to true. Set review:false only for low-risk, narrow
-work with concrete worker verification, or to avoid redundant nested reviews.
-Keep review for risky, security-sensitive or broad changes, uncertain verification,
-or explicit user requirements. Skipping review never skips worker verification.
-A review-skipped completion is not PASS or independent approval; integrate its
-worker report with that limitation. Non-interactive task-list whole-item review
-is mandatory.`;
+export const reviewGuidance = `Independent review is on by default (review: true). Set review:false only for
+low-risk, narrow work the worker has concretely verified, or to avoid redundant nested
+reviews. Keep review for risky, security-sensitive or broad changes, uncertain
+verification, or explicit user requirements. Skipping review never skips the worker's own
+verification. A completion with review skipped is not a PASS or independent approval;
+integrate the worker's report and note that limitation. In non-interactive task lists,
+the final review of each whole item is mandatory.`;
 
 // The verdict is the first non-empty line, tolerating markdown emphasis and
 // trailing punctuation ("**PASS**", "PASS."). Anything else, including
