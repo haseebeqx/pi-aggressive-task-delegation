@@ -5,7 +5,7 @@ reviews. Keep review for risky, security-sensitive or broad changes, uncertain
 verification, or explicit user requirements. Skipping review never skips the worker's own
 verification. A completion with review skipped is not a PASS or independent approval;
 integrate the worker's report and note that limitation. In non-interactive task lists,
-the final review of each whole item is mandatory.`;
+the whole-item review of each task-list item is mandatory.`;
 
 // The verdict is the first non-empty line, tolerating markdown emphasis and
 // trailing punctuation ("**PASS**", "PASS."). Anything else, including

@@ -139,7 +139,7 @@ or make discovery tools permit blocked writes.
 Main **delegates substantive implementation or context-heavy investigation by default**
 after brief bounded orientation: read applicable project instructions and only enough
 targeted files to route the task. Observable triggers are a multi-file change,
-meaningful implementation plus tests, or broad investigation. Hand off before broad
+meaningful implementation plus tests, or broad investigation. Delegate before broad
 exploration or implementation; do not solve the task before delegation. Main may
 assign the whole cohesive scope without manufacturing subtasks. Trivial localized
 edits, cheap lookups, and focused questions may stay local; knowing how to do a

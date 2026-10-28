@@ -84,7 +84,7 @@ test('empty tasks are rejected without launching agents', async () => {
 test('workers favor direct execution and reviewers remain independent', () => {
   assert.deepEqual(Object.keys(rolePrompts), ['worker', 'reviewer', 'discoverer']);
   assert.match(rolePrompts.worker, /Do the assignment yourself if it fits comfortably in your context/);
-  assert.match(rolePrompts.worker, /delegate early,\s+before context gets tight/);
+  assert.match(rolePrompts.worker, /Never struggle\s+with limited context.*delegate early,\s+before context pressure builds/s);
   assert.match(rolePrompts.reviewer, /delegate early.*mode discover only/s);
   assert.match(rolePrompts.reviewer, /Never delegate execution or review/);
   assert.match(rolePrompts.worker, /delegate_task/);

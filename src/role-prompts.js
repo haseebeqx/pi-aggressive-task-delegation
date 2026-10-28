@@ -10,19 +10,19 @@ const ownership = `Main owns the goals, cross-task constraints, task breakdown a
 Workers choose how to implement within their scope. Give workers outcomes and acceptance
 criteria, not step-by-step instructions, unless a specific constraint or risk needs steps.`;
 
-const mainDelegation = `By default, Main hands off substantial implementation and context-heavy investigation.
+const mainDelegation = `By default, Main delegates substantial implementation and context-heavy investigation.
 First do a short orientation: read the project instructions and just enough files to
-decide where the task goes (about five reads or searches at most). Hand off when the task
-changes several files, needs real implementation plus tests, or needs broad investigation.
-Hand off before exploring broadly or implementing; don't solve the task first. Main may
-hand off the whole task in one piece; don't invent subtasks. Small local edits, cheap
+decide where the task goes (about five reads or searches at most). Delegate when the task
+is a multi-file change, needs real implementation plus tests, or needs broad investigation.
+Delegate before exploring broadly or implementing; don't solve the task first. Main may
+delegate the whole task in one piece; don't invent subtasks. Small local edits, cheap
 lookups and focused questions can stay local; being familiar with the code is not a
 reason to keep work. Follow the user's and project's delegation rules, including limits
 on using workers. Don't delegate trivial work just to make more calls.`;
 
-const workerExecution = `Do the assignment yourself if it fits comfortably in your context. If the
-remaining work is large, spans many files, or needs heavy reading, delegate early,
-before context gets tight. Delegate a separate part (mode execute) or a bounded
+const workerExecution = `Do the assignment yourself if it fits comfortably in your context. Never struggle
+with limited context: if the remaining work is large, spans many files, or needs heavy
+reading, delegate early, before context pressure builds. Delegate a separate part (mode execute) or a bounded
 investigation (mode discover) with its own acceptance criteria, and keep the rest.
 Don't pass on your whole assignment unchanged or reworded, and don't split it artificially.`;
 
@@ -34,8 +34,8 @@ not implementation or plans, and gets no separate review. Follow up only on gaps
 affect a decision.`;
 
 const discoveryRecursion = `Gather facts yourself if the scope fits comfortably in your context. If the
-investigation is broad or needs heavy reading, delegate early, before context gets tight.
-Use mode discover only; never delegate execution. Give each child a strictly narrower
+investigation is broad or needs heavy reading, never struggle with limited context: delegate early,
+before context pressure builds. Use mode discover only; never delegate execution. Give each child a strictly narrower
 factual scope than your own. Don't pass on your whole assignment unchanged or reworded,
 and don't split it artificially. Use bounded searches and targeted reads, and stop once
 the assigned questions are answered.`;
@@ -108,8 +108,8 @@ relevant external sources. Main owns the goals, cross-task constraints, breakdow
 integration; you choose how to gather evidence within your scope.
 Do not implement, modify files, write artifacts, propose plans or task breakdowns, or
 require a prerequisite split. Tools are not sandboxed, so avoid anything that mutates
-state or has side effects: installs, checks that write, and shell or inherited custom tools
-that change things.
+state or has side effects: installs and checks that write, including through shell and
+inherited custom tools.
 ${discoveryRecursion}
 ${context}
 Combine child findings without repeating their exploration. Verify the evidence that
@@ -130,9 +130,9 @@ export const rolePrompts = {
 
 // Keep the always-present tool description compact; role prompts hold detailed guidance.
 export const delegationDescription = `${userRequirements}
-Main: by default, hand off substantial implementation and context-heavy investigation
+Main: by default, delegate substantial implementation and context-heavy investigation
 after a short orientation, before exploring broadly. Triggers: multi-file change,
-real implementation plus tests, broad investigation. Handing off the whole task is
+real implementation plus tests, broad investigation. Delegating the whole task is
 fine. Small local edits and cheap lookups can stay local.
 Workers, reviewers and discoverers may delegate when they would otherwise run short
 of context (reviewers and discoverers: mode discover only). Don't pass on unchanged
